@@ -1,0 +1,10 @@
+#!/bin/bash
+if ! sh platform/unix/gen-makefile; then
+	echo "You should be doing this from the root directory of the project."
+	exit 1
+fi
+autoheader # Gimmie config.h.in
+libtoolize --force
+aclocal
+autoconf
+automake -a
