@@ -18,6 +18,8 @@
 * 3. This notice may not be removed or altered from any source distribution.
 **/
 
+#include <iostream>
+
 // LOVE
 #include "wrap_Audio.h"
 
@@ -33,7 +35,7 @@ namespace love
 namespace audio
 {
 	extern Audio * instance;
-namespace openal
+namespace sdl
 {
 	// List of functions to wrap.
 	static const luaL_Reg functions[] = {
@@ -52,9 +54,6 @@ namespace openal
 		{ "getOrientation", w_getOrientation },
 		{ "setVelocity", w_setVelocity },
 		{ "getVelocity", w_getVelocity },
-		/*{ "record", w_record },
-		{ "getRecordedData", w_getRecordedData },
-		{ "stopRecording", w_stopRecording },*/
 		{ 0, 0 }
 	};
 
@@ -63,11 +62,11 @@ namespace openal
 		0
 	};
 
-	int luaopen_love_audio_openal(lua_State * L)
+	int luaopen_love_audio_sdl(lua_State * L)
 	{
 		if(instance == 0)
 		{
-			// Try OpenAL first.
+			// Try SDL first.
 			try
 			{
 				instance = new Audio();
@@ -111,6 +110,6 @@ namespace openal
 		return 0;
 	}
 	
-} // openal
+} // sdl
 } // audio
 } // love
