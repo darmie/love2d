@@ -146,7 +146,7 @@ int w_Source_setPosition(lua_State *L)
 	v[0] = (float)luaL_checknumber(L, 2);
 	v[1] = (float)luaL_checknumber(L, 3);
 	v[2] = (float)luaL_optnumber(L, 4, 0);
-	t->setPosition(v);
+	EXCEPT_GUARD(t->setPosition(v);)
 	return 0;
 }
 
@@ -154,7 +154,7 @@ int w_Source_getPosition(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	float v[3];
-	t->getPosition(v);
+	EXCEPT_GUARD(t->getPosition(v);)
 	lua_pushnumber(L, v[0]);
 	lua_pushnumber(L, v[1]);
 	lua_pushnumber(L, v[2]);
@@ -168,7 +168,7 @@ int w_Source_setVelocity(lua_State *L)
 	v[0] = (float)luaL_checknumber(L, 2);
 	v[1] = (float)luaL_checknumber(L, 3);
 	v[2] = (float)luaL_optnumber(L, 4, 0);
-	t->setVelocity(v);
+	EXCEPT_GUARD(t->setVelocity(v);)
 	return 0;
 }
 
@@ -176,7 +176,7 @@ int w_Source_getVelocity(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	float v[3];
-	t->getVelocity(v);
+	EXCEPT_GUARD(t->getVelocity(v);)
 	lua_pushnumber(L, v[0]);
 	lua_pushnumber(L, v[1]);
 	lua_pushnumber(L, v[2]);
@@ -190,7 +190,7 @@ int w_Source_setDirection(lua_State *L)
 	v[0] = (float)luaL_checknumber(L, 2);
 	v[1] = (float)luaL_checknumber(L, 3);
 	v[2] = (float)luaL_optnumber(L, 4, 0);
-	t->setDirection(v);
+	EXCEPT_GUARD(t->setDirection(v);)
 	return 0;
 }
 
@@ -198,7 +198,7 @@ int w_Source_getDirection(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	float v[3];
-	t->getDirection(v);
+	EXCEPT_GUARD(t->getDirection(v);)
 	lua_pushnumber(L, v[0]);
 	lua_pushnumber(L, v[1]);
 	lua_pushnumber(L, v[2]);
@@ -211,7 +211,7 @@ int w_Source_setCone(lua_State *L)
 	float innerAngle = (float) luaL_checknumber(L, 2);
 	float outerAngle = (float) luaL_checknumber(L, 3);
 	float outerVolume = (float) luaL_optnumber(L, 4, 0.0);
-	t->setCone(innerAngle, outerAngle, outerVolume);
+	EXCEPT_GUARD(t->setCone(innerAngle, outerAngle, outerVolume);)
 	return 0;
 }
 
@@ -219,7 +219,7 @@ int w_Source_getCone(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	float innerAngle, outerAngle, outerVolume;
-	t->getCone(innerAngle, outerAngle, outerVolume);
+	EXCEPT_GUARD(t->getCone(innerAngle, outerAngle, outerVolume);)
 	lua_pushnumber(L, innerAngle);
 	lua_pushnumber(L, outerAngle);
 	lua_pushnumber(L, outerVolume);
@@ -229,14 +229,14 @@ int w_Source_getCone(lua_State *L)
 int w_Source_setRelative(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	t->setRelative(luax_toboolean(L, 2));
+	EXCEPT_GUARD(t->setRelative(luax_toboolean(L, 2));)
 	return 0;
 }
 
 int w_Source_isRelative(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	luax_pushboolean(L, t->isRelative());
+	EXCEPT_GUARD(luax_pushboolean(L, t->isRelative());)
 	return 1;
 }
 
@@ -275,13 +275,6 @@ int w_Source_isPlaying(lua_State *L)
 	return 1;
 }
 
-int w_Source_isStatic(lua_State *L)
-{
-	Source *t = luax_checksource(L, 1);
-	luax_pushboolean(L, t->isStatic());
-	return 1;
-}
-
 int w_Source_setVolumeLimits(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
@@ -309,16 +302,16 @@ int w_Source_setAttenuationDistances(lua_State *L)
 	float dmax = (float)luaL_checknumber(L, 3);
 	if (dref < .0f || dmax < .0f)
 		return luaL_error(L, "Invalid distances: %f, %f. Must be > 0", dref, dmax);
-	t->setReferenceDistance(dref);
-	t->setMaxDistance(dmax);
+	EXCEPT_GUARD(t->setReferenceDistance(dref);)
+	EXCEPT_GUARD(t->setMaxDistance(dmax);)
 	return 0;
 }
 
 int w_Source_getAttenuationDistances(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	lua_pushnumber(L, t->getReferenceDistance());
-	lua_pushnumber(L, t->getMaxDistance());
+	EXCEPT_GUARD(lua_pushnumber(L, t->getReferenceDistance());)
+	EXCEPT_GUARD(lua_pushnumber(L, t->getMaxDistance());)
 	return 2;
 }
 
@@ -328,14 +321,14 @@ int w_Source_setRolloff(lua_State *L)
 	float rolloff = (float)luaL_checknumber(L, 2);
 	if (rolloff < .0f)
 		return luaL_error(L, "Invalid rolloff: %f. Must be > 0.", rolloff);
-	t->setRolloffFactor(rolloff);
+	EXCEPT_GUARD(t->setRolloffFactor(rolloff);)
 	return 0;
 }
 
 int w_Source_getRolloff(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	lua_pushnumber(L, t->getRolloffFactor());
+	EXCEPT_GUARD(lua_pushnumber(L, t->getRolloffFactor());)
 	return 1;
 }
 
@@ -343,6 +336,19 @@ int w_Source_getChannels(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	lua_pushinteger(L, t->getChannels());
+	return 1;
+}
+
+int w_Source_getType(lua_State *L)
+{
+	Source *t = luax_checksource(L, 1);
+	Source::Type type = t->getType();
+	const char *str = nullptr;
+
+	if (!Source::getConstant(type, str))
+		return luaL_error(L, "Unknown Source type.");
+
+	lua_pushstring(L, str);
 	return 1;
 }
 
@@ -379,7 +385,6 @@ static const luaL_Reg functions[] =
 	{ "isStopped", w_Source_isStopped },
 	{ "isPaused", w_Source_isPaused },
 	{ "isPlaying", w_Source_isPlaying },
-	{ "isStatic", w_Source_isStatic },
 
 	{ "setVolumeLimits", w_Source_setVolumeLimits },
 	{ "getVolumeLimits", w_Source_getVolumeLimits },
@@ -389,6 +394,7 @@ static const luaL_Reg functions[] =
 	{ "getRolloff", w_Source_getRolloff},
 
 	{ "getChannels", w_Source_getChannels },
+	{ "getType", w_Source_getType },
 
 	{ 0, 0 }
 };
