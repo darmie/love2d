@@ -388,11 +388,6 @@ static const luaL_Reg functions[] =
 	{ "sendTexture", w_Shader_sendTexture },
 	{ "send",        w_Shader_send },
 	{ "getExternVariable", w_Shader_getExternVariable },
-
-	// Deprecated since 0.9.1.
-	{ "sendImage",   w_Shader_sendTexture },
-	{ "sendCanvas",  w_Shader_sendTexture },
-
 	{ 0, 0 }
 };
 

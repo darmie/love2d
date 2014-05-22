@@ -53,9 +53,9 @@ public:
 	enum BlendMode
 	{
 		BLEND_ALPHA,
-		BLEND_ADDITIVE,
-		BLEND_SUBTRACTIVE,
-		BLEND_MULTIPLICATIVE,
+		BLEND_ADD,
+		BLEND_SUBTRACT,
+		BLEND_MULTIPLY,
 		BLEND_PREMULTIPLIED,
 		BLEND_SCREEN,
 		BLEND_REPLACE,
@@ -77,22 +77,10 @@ public:
 		LINE_JOIN_MAX_ENUM
 	};
 
-	enum PointStyle
-	{
-		POINT_ROUGH,
-		POINT_SMOOTH,
-		POINT_MAX_ENUM
-	};
-
 	enum Support
 	{
-		SUPPORT_CANVAS,
 		SUPPORT_HDR_CANVAS,
 		SUPPORT_MULTI_CANVAS,
-		SUPPORT_SHADER,
-		SUPPORT_NPOT,
-		SUPPORT_SUBTRACTIVE,
-		SUPPORT_MIPMAP,
 		SUPPORT_DXT,
 		SUPPORT_BC5,
 		SUPPORT_INSTANCING,
@@ -153,9 +141,6 @@ public:
 	static bool getConstant(const char *in, LineJoin &out);
 	static bool getConstant(LineJoin in, const char  *&out);
 
-	static bool getConstant(const char *in, PointStyle &out);
-	static bool getConstant(PointStyle in, const char  *&out);
-
 	static bool getConstant(const char *in, Support &out);
 	static bool getConstant(Support in, const char  *&out);
 
@@ -181,9 +166,6 @@ private:
 
 	static StringMap<LineJoin, LINE_JOIN_MAX_ENUM>::Entry lineJoinEntries[];
 	static StringMap<LineJoin, LINE_JOIN_MAX_ENUM> lineJoins;
-
-	static StringMap<PointStyle, POINT_MAX_ENUM>::Entry pointStyleEntries[];
-	static StringMap<PointStyle, POINT_MAX_ENUM> pointStyles;
 
 	static StringMap<Support, SUPPORT_MAX_ENUM>::Entry supportEntries[];
 	static StringMap<Support, SUPPORT_MAX_ENUM> support;

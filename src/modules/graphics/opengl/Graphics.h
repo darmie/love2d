@@ -72,7 +72,6 @@ struct DisplayState
 
 	// Point.
 	float pointSize;
-	Graphics::PointStyle pointStyle;
 
 	// Scissor.
 	bool scissor;
@@ -92,7 +91,6 @@ struct DisplayState
 		lineStyle = Graphics::LINE_SMOOTH;
 		lineJoin  = Graphics::LINE_JOIN_MITER;
 		pointSize = 1.0f;
-		pointStyle = Graphics::POINT_SMOOTH;
 		scissor = false;
 		colorMask[0] = colorMask[1] = colorMask[2] = colorMask[3] = true;
 		wireframe = false;
@@ -322,20 +320,9 @@ public:
 	void setPointSize(float size);
 
 	/**
-	 * Sets the style of points.
-	 * @param style POINT_SMOOTH or POINT_ROUGH.
-	 **/
-	void setPointStyle(PointStyle style);
-
-	/**
 	 * Gets the point size.
 	 **/
 	float getPointSize() const;
-
-	/**
-	 * Gets the point style.
-	 **/
-	PointStyle getPointStyle() const;
 
 	/**
 	 * Sets whether graphics will be drawn as wireframe lines instead of filled
@@ -485,6 +472,8 @@ private:
 	bool activeStencil;
 
 	DisplayState savedState;
+
+	bool displayedMinReqWarning;
 
 }; // Graphics
 
