@@ -44,16 +44,7 @@ namespace opengl
 
 VertexBuffer *VertexBuffer::Create(size_t size, GLenum target, GLenum usage, MemoryBacking backing)
 {
-	try
-	{
-		// Try to create a VBO.
-		return new VBO(size, target, usage, backing);
-	}
-	catch(const love::Exception &)
-	{
-		// VBO not supported ... create regular array.
-		return new VertexArray(size, target, usage, backing);
-	}
+	return new VertexBuffer(size, target, usage, backing);
 }
 
 VertexBuffer::VertexBuffer(size_t size, GLenum target, GLenum usage, MemoryBacking backing)
@@ -63,70 +54,12 @@ VertexBuffer::VertexBuffer(size_t size, GLenum target, GLenum usage, MemoryBacki
 	, target(target)
 	, usage(usage)
 	, backing(backing)
-{
-}
-
-VertexBuffer::~VertexBuffer()
-{
-}
-
-// VertexArray
-
-VertexArray::VertexArray(size_t size, GLenum target, GLenum usage, MemoryBacking backing)
-	: VertexBuffer(size, target, usage, backing)
-	, buf(new char[size])
-{
-}
-
-VertexArray::~VertexArray()
-{
-	delete [] buf;
-}
-
-void *VertexArray::map()
-{
-	is_mapped = true;
-	return buf;
-}
-
-void VertexArray::unmap()
-{
-	is_mapped = false;
-}
-
-void VertexArray::bind()
-{
-	is_bound = true;
-}
-
-void VertexArray::unbind()
-{
-	is_bound = false;
-}
-
-void VertexArray::fill(size_t offset, size_t size, const void *data)
-{
-	memcpy(buf + offset, data, size);
-}
-
-const void *VertexArray::getPointer(size_t offset) const
-{
-	return buf + offset;
-}
-
-// VBO
-
-VBO::VBO(size_t size, GLenum target, GLenum usage, MemoryBacking backing)
-	: VertexBuffer(size, target, usage, backing)
 	, vbo(0)
 	, memory_map(0)
 	, is_dirty(true)
 {
-	if (!(GLEE_ARB_vertex_buffer_object || GLEE_VERSION_1_5))
-		throw love::Exception("Not supported");
-
 	if (getMemoryBacking() == BACKING_FULL)
-		memory_map = malloc(getSize());
+		memory_map = (char *) malloc(getSize());
 
 	bool ok = load(false);
 
@@ -137,7 +70,7 @@ VBO::VBO(size_t size, GLenum target, GLenum usage, MemoryBacking backing)
 	}
 }
 
-VBO::~VBO()
+VertexBuffer::~VertexBuffer()
 {
 	if (vbo != 0)
 		unload(false);
@@ -146,21 +79,21 @@ VBO::~VBO()
 		free(memory_map);
 }
 
-void *VBO::map()
+void *VertexBuffer::map()
 {
 	if (is_mapped)
 		return memory_map;
 
 	if (!memory_map)
 	{
-		memory_map = malloc(getSize());
+		memory_map = (char *) malloc(getSize());
 		if (!memory_map)
 			throw love::Exception("Out of memory (oh the humanity!)");
 	}
 
 	if (is_dirty)
 	{
-		glGetBufferSubDataARB(getTarget(), 0, (GLsizeiptr) getSize(), memory_map);
+		glGetBufferSubData(getTarget(), 0, (GLsizeiptr) getSize(), memory_map);
 		is_dirty = false;
 	}
 
@@ -169,104 +102,107 @@ void *VBO::map()
 	return memory_map;
 }
 
-void VBO::unmap()
+void VertexBuffer::unmapStatic(size_t offset, size_t size)
+{
+	// Upload the mapped data to the buffer.
+	glBufferSubData(getTarget(), (GLintptr) offset, (GLsizeiptr) size, memory_map + offset);
+}
+
+void VertexBuffer::unmapStream()
+{
+	// "orphan" current buffer to avoid implicit synchronisation on the GPU:
+	// http://www.seas.upenn.edu/~pcozzi/OpenGLInsights/OpenGLInsights-AsynchronousBufferTransfers.pdf
+	glBufferData(getTarget(), (GLsizeiptr) getSize(), nullptr,    getUsage());
+	glBufferData(getTarget(), (GLsizeiptr) getSize(), memory_map, getUsage());
+}
+
+void VertexBuffer::unmap(size_t usedOffset, size_t usedSize)
 {
 	if (!is_mapped)
 		return;
+
+	usedOffset = std::min(usedOffset, getSize());
+	usedSize = std::min(usedSize, getSize() - usedOffset);
 
 	// VBO::bind is a no-op when the VBO is mapped, so we have to make sure it's
 	// bound here.
 	if (!is_bound)
 	{
-		glBindBufferARB(getTarget(), vbo);
+		glBindBuffer(getTarget(), vbo);
 		is_bound = true;
 	}
 
-	if (getUsage() == GL_STATIC_DRAW)
+	switch (getUsage())
 	{
-		// Upload the mapped data to the buffer.
-		glBufferSubDataARB(getTarget(), 0, (GLsizeiptr) getSize(), memory_map);
-	}
-	else
-	{
-		// "orphan" current buffer to avoid implicit synchronisation on the GPU:
-		// http://www.seas.upenn.edu/~pcozzi/OpenGLInsights/OpenGLInsights-AsynchronousBufferTransfers.pdf
-		glBufferDataARB(getTarget(), (GLsizeiptr) getSize(), NULL,       getUsage());
-		glBufferDataARB(getTarget(), (GLsizeiptr) getSize(), memory_map, getUsage());
+	case GL_STATIC_DRAW:
+		unmapStatic(usedOffset, usedSize);
+		break;
+	case GL_STREAM_DRAW:
+		unmapStream();
+		break;
+	case GL_DYNAMIC_DRAW:
+	default:
+		// It's probably more efficient to treat it like a streaming buffer if
+		// more than a third of its contents have been modified during the map().
+		if (usedSize >= getSize() / 3)
+			unmapStream();
+		else
+			unmapStatic(usedOffset, usedSize);
+		break;
 	}
 
 	is_mapped = false;
 }
 
-void VBO::bind()
+void VertexBuffer::bind()
 {
 	if (!is_mapped)
 	{
-		glBindBufferARB(getTarget(), vbo);
+		glBindBuffer(getTarget(), vbo);
 		is_bound = true;
 	}
 }
 
-void VBO::unbind()
+void VertexBuffer::unbind()
 {
 	if (is_bound)
-		glBindBufferARB(getTarget(), 0);
+		glBindBuffer(getTarget(), 0);
 
 	is_bound = false;
 }
 
-void VBO::fill(size_t offset, size_t size, const void *data)
+void VertexBuffer::fill(size_t offset, size_t size, const void *data)
 {
 	if (is_mapped || getMemoryBacking() == BACKING_FULL)
-		memcpy(static_cast<char *>(memory_map) + offset, data, size);
+		memcpy(memory_map + offset, data, size);
 
 	if (!is_mapped)
 	{
-		// Not all systems have access to some faster paths...
-		if (GLEE_APPLE_flush_buffer_range)
-		{
-			void *mapdata = glMapBufferARB(getTarget(), GL_WRITE_ONLY);
-
-			if (mapdata)
-			{
-				// We specified in VBO::load that we'll do manual flushing.
-				// Now we tell the driver it only needs to deal with the data
-				// we changed.
-				memcpy(static_cast<char *>(mapdata) + offset, data, size);
-				glFlushMappedBufferRangeAPPLE(getTarget(), (GLintptr) offset, (GLsizei) size);
-			}
-
-			glUnmapBufferARB(getTarget());
-		}
-		else
-		{
-			// Fall back to a possibly slower SubData (more chance of syncing.)
-			glBufferSubDataARB(getTarget(), (GLintptr) offset, (GLsizeiptr) size, data);
-		}
+		glBufferSubData(getTarget(), (GLintptr) offset, (GLsizeiptr) size, data);
 
 		if (getMemoryBacking() != BACKING_FULL)
 			is_dirty = true;
 	}
 }
 
-const void *VBO::getPointer(size_t offset) const
+const void *VertexBuffer::getPointer(size_t offset) const
 {
 	return BUFFER_OFFSET(offset);
 }
 
-bool VBO::loadVolatile()
+bool VertexBuffer::loadVolatile()
 {
 	return load(true);
 }
 
-void VBO::unloadVolatile()
+void VertexBuffer::unloadVolatile()
 {
 	unload(true);
 }
 
-bool VBO::load(bool restore)
+bool VertexBuffer::load(bool restore)
 {
-	glGenBuffersARB(1, &vbo);
+	glGenBuffers(1, &vbo);
 
 	VertexBuffer::Bind bind(*this);
 
@@ -276,20 +212,14 @@ bool VBO::load(bool restore)
 	while (GL_NO_ERROR != glGetError())
 		/* clear error messages */;
 
-	// We don't want to flush the entire buffer when we just modify a small
-	// portion of it (VBO::fill without VBO::map), so we'll handle the flushing
-	// ourselves when we can.
-	if (GLEE_APPLE_flush_buffer_range)
-		glBufferParameteriAPPLE(getTarget(), GL_BUFFER_FLUSHING_UNMAP_APPLE, GL_FALSE);
-
 	// Note that if 'src' is '0', no data will be copied.
-	glBufferDataARB(getTarget(), (GLsizeiptr) getSize(), src, getUsage());
+	glBufferData(getTarget(), (GLsizeiptr) getSize(), src, getUsage());
 	GLenum err = glGetError();
 
 	return (GL_NO_ERROR == err);
 }
 
-void VBO::unload(bool save)
+void VertexBuffer::unload(bool save)
 {
 	// Save data before unloading, if we need to.
 	if (save && getMemoryBacking() == BACKING_PARTIAL)
@@ -302,7 +232,7 @@ void VBO::unload(bool save)
 		is_mapped = mapped;
 	}
 
-	glDeleteBuffersARB(1, &vbo);
+	glDeleteBuffers(1, &vbo);
 	vbo = 0;
 }
 

@@ -135,14 +135,8 @@ public:
 	static void setDefaultMipmapFilter(FilterMode f);
 	static FilterMode getDefaultMipmapFilter();
 
-	static bool hasNpot();
 	static bool hasAnisotropicFilteringSupport();
-	static bool hasMipmapSupport();
-	static bool hasMipmapSharpnessSupport();
-
-	static bool hasCompressedTextureSupport();
 	static bool hasCompressedTextureSupport(image::CompressedData::Format format);
-
 	static bool hasSRGBSupport();
 
 	static bool getConstant(const char *in, Format &out);
@@ -161,9 +155,6 @@ private:
 	// Or the Compressed Image Data from which the texture is created. May be
 	// null if raw ImageData was used to create the texture.
 	love::image::CompressedData *cdata;
-
-	// Real dimensions of the texture, if it was auto-padded to POT size.
-	int paddedWidth, paddedHeight;
 
 	// OpenGL texture identifier.
 	GLuint texture;
@@ -186,7 +177,6 @@ private:
 
 	void preload();
 
-	void uploadTexturePadded();
 	void uploadTexture();
 
 	void uploadCompressedMipmaps();

@@ -495,16 +495,6 @@ std::vector<WindowSize> Window::getFullscreenSizes(int displayindex) const
 	return sizes;
 }
 
-int Window::getWidth() const
-{
-	return curMode.width;
-}
-
-int Window::getHeight() const
-{
-	return curMode.height;
-}
-
 void Window::getDesktopDimensions(int displayindex, int &width, int &height) const
 {
 	if (displayindex >= 0 && displayindex < getDisplayCount())
@@ -660,6 +650,27 @@ double Window::getPixelScale() const
 const void *Window::getHandle() const
 {
 	return window;
+}
+
+void Window::showMessageBox(MessageBoxType type, const char *title, const char *message)
+{
+	SDL_MessageBoxFlags sdlflags;
+
+	switch (type)
+	{
+	case MESSAGEBOX_ERROR:
+		sdlflags = SDL_MESSAGEBOX_ERROR;
+		break;
+	case MESSAGEBOX_WARNING:
+		sdlflags = SDL_MESSAGEBOX_WARNING;
+		break;
+	case MESSAGEBOX_INFO:
+	default:
+		sdlflags = SDL_MESSAGEBOX_INFORMATION;
+		break;
+	}
+
+	SDL_ShowSimpleMessageBox(sdlflags, title, message, window);
 }
 
 love::window::Window *Window::createSingleton()
