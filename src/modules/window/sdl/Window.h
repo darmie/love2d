@@ -55,9 +55,6 @@ public:
 
 	std::vector<WindowSize> getFullscreenSizes(int displayindex) const;
 
-	int getWidth() const;
-	int getHeight() const;
-
 	void getDesktopDimensions(int displayindex, int &width, int &height) const;
 
 	bool isCreated() const;
@@ -84,6 +81,8 @@ public:
 	double getPixelScale() const;
 
 	const void *getHandle() const;
+
+	void showMessageBox(MessageBoxType type, const char *title, const char *message);
 
 	static love::window::Window *createSingleton();
 	static love::window::Window *getSingleton();

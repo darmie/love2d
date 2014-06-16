@@ -146,10 +146,11 @@ int w_setInvertedStencil(lua_State *L)
 	return setStencil(L, true);
 }
 
-int w_getMaxTextureSize(lua_State *L)
+static const char *imageFlagName(Image::FlagType flagtype)
 {
-	lua_pushinteger(L, instance->getSystemLimit(Graphics::LIMIT_TEXTURE_SIZE));
-	return 1;
+	const char *name = nullptr;
+	Image::getConstant(flagtype, name);
+	return name;
 }
 
 int w_newImage(lua_State *L)
@@ -157,11 +158,12 @@ int w_newImage(lua_State *L)
 	love::image::ImageData *data = nullptr;
 	love::image::CompressedData *cdata = nullptr;
 
-	Image::Format format = Image::FORMAT_NORMAL;
-	const char *fstr = lua_isnoneornil(L, 2) ? nullptr : luaL_checkstring(L, 2);
-
-	if (fstr != nullptr && !Image::getConstant(fstr, format))
-		return luaL_error(L, "Invalid Image format: %s", fstr);
+	Image::Flags flags;
+	if (!lua_isnoneornil(L, 2))
+	{
+		flags.mipmaps = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_MIPMAPS), flags.mipmaps);
+		flags.sRGB = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_SRGB), flags.sRGB);
+	}
 
 	bool releasedata = false;
 
@@ -205,9 +207,9 @@ int w_newImage(lua_State *L)
 	luax_catchexcept(L,
 		[&]() {
 			if (cdata)
-				image = instance->newImage(cdata, format);
+				image = instance->newImage(cdata, flags);
 			else if (data)
-				image = instance->newImage(data, format);
+				image = instance->newImage(data, flags);
 		},
 		[&]() {
 			if (releasedata && data)
@@ -369,9 +371,6 @@ int w_newCanvas(lua_State *L)
 
 int w_newShader(lua_State *L)
 {
-	if (!Shader::isSupported())
-		return luaL_error(L, "Sorry, your graphics card does not support shaders.");
-
 	// clamp stack to 2 elements
 	lua_settop(L, 2);
 
@@ -829,37 +828,9 @@ int w_setPointSize(lua_State *L)
 	return 0;
 }
 
-int w_setPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style;
-
-	const char *str = luaL_checkstring(L, 1);
-	if (!Graphics::getConstant(str, style))
-		return luaL_error(L, "Invalid point style: %s", str);
-
-	instance->setPointStyle(style);
-	return 0;
-}
-
 int w_getPointSize(lua_State *L)
 {
 	lua_pushnumber(L, instance->getPointSize());
-	return 1;
-}
-
-int w_getPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style = instance->getPointStyle();
-	const char *str;
-	if (!Graphics::getConstant(style, str))
-		return luaL_error(L, "Unknown point style");
-	lua_pushstring(L, str);
-	return 1;
-}
-
-int w_getMaxPointSize(lua_State *L)
-{
-	lua_pushnumber(L, instance->getSystemLimit(Graphics::LIMIT_POINT_SIZE));
 	return 1;
 }
 
@@ -999,32 +970,12 @@ int w_isSupported(lua_State *L)
 
 		switch (support)
 		{
-		case Graphics::SUPPORT_CANVAS:
-			if (!Canvas::isSupported())
-				supported = false;
-			break;
 		case Graphics::SUPPORT_HDR_CANVAS:
 			if (!Canvas::isFormatSupported(Canvas::FORMAT_HDR))
 				supported = false;
 			break;
 		case Graphics::SUPPORT_MULTI_CANVAS:
 			if (!Canvas::isMultiCanvasSupported())
-				supported = false;
-			break;
-		case Graphics::SUPPORT_SHADER:
-			if (!Shader::isSupported())
-				supported = false;
-			break;
-		case Graphics::SUPPORT_NPOT:
-			if (!Image::hasNpot())
-				supported = false;
-			break;
-		case Graphics::SUPPORT_SUBTRACTIVE:
-			if (!((GLEE_VERSION_1_4 || GLEE_ARB_imaging) || (GLEE_EXT_blend_minmax && GLEE_EXT_blend_subtract)))
-				supported = false;
-			break;
-		case Graphics::SUPPORT_MIPMAP:
-			if (!Image::hasMipmapSupport())
 				supported = false;
 			break;
 		case Graphics::SUPPORT_DXT:
@@ -1434,9 +1385,7 @@ static const luaL_Reg functions[] =
 	{ "getLineStyle", w_getLineStyle },
 	{ "getLineJoin", w_getLineJoin },
 	{ "setPointSize", w_setPointSize },
-	{ "setPointStyle", w_setPointStyle },
 	{ "getPointSize", w_getPointSize },
-	{ "getPointStyle", w_getPointStyle },
 	{ "setWireframe", w_setWireframe },
 	{ "isWireframe", w_isWireframe },
 	{ "newScreenshot", w_newScreenshot },
@@ -1482,10 +1431,6 @@ static const luaL_Reg functions[] =
 	{ "translate", w_translate },
 	{ "shear", w_shear },
 	{ "origin", w_origin },
-
-	// Deprecated since 0.9.1.
-	{ "getMaxImageSize", w_getMaxTextureSize },
-	{ "getMaxPointSize", w_getMaxPointSize },
 
 	{ 0, 0 }
 };

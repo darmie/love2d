@@ -55,6 +55,7 @@ Graphics::Graphics()
 	, created(false)
 	, activeStencil(false)
 	, savedState()
+	, displayedMinReqWarning(false)
 {
 	currentWindow = love::window::sdl::Window::createSingleton();
 
@@ -92,8 +93,6 @@ DisplayState Graphics::saveState()
 	s.lineStyle = lineStyle;
 	//get the point size
 	glGetFloatv(GL_POINT_SIZE, &s.pointSize);
-	//get point style
-	s.pointStyle = (glIsEnabled(GL_POINT_SMOOTH) == GL_TRUE) ? Graphics::POINT_SMOOTH : Graphics::POINT_ROUGH;
 	//get scissor status
 	s.scissor = (glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE);
 	//do we have scissor, if so, store the box
@@ -116,7 +115,6 @@ void Graphics::restoreState(const DisplayState &s)
 	setLineWidth(lineWidth);
 	setLineStyle(s.lineStyle);
 	setPointSize(s.pointSize);
-	setPointStyle(s.pointStyle);
 	if (s.scissor)
 		setScissor(s.scissorBox.x, s.scissorBox.y, s.scissorBox.w, s.scissorBox.h);
 	else
@@ -164,16 +162,38 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 	this->width = width;
 	this->height = height;
 
-	// Okay, setup OpenGL.
 	gl.initContext();
+
+	// Does the system meet LOVE's minimum requirements for graphics?
+	if (!(GLEE_VERSION_2_0 && Shader::isSupported() && Canvas::isSupported())
+		&& !displayedMinReqWarning)
+	{
+		love::window::MessageBoxType type = love::window::MESSAGEBOX_ERROR;
+
+		const char *title = "Minimum system requirements not met!";
+
+		std::string message;
+		message += "Detected OpenGL version: ";
+		message += (const char *) glGetString(GL_VERSION);
+		message += "\nRequired OpenGL version: 2.1."; // -ish
+		message += "\nThe program may crash or have graphical issues.";
+
+		::printf("%s\n%s\n", title, message.c_str());
+		currentWindow->showMessageBox(type, title, message.c_str());
+
+		// We should only show the message once, instead of after every setMode.
+		displayedMinReqWarning = true;
+	}
+
+	// Okay, setup OpenGL.
+	gl.setupContext();
 
 	created = true;
 
 	setViewportSize(width, height);
 
 	// Make sure antialiasing works when set elsewhere
-	if (GLEE_VERSION_1_3 || GLEE_ARB_multisample)
-		glEnable(GL_MULTISAMPLE);
+	glEnable(GL_MULTISAMPLE);
 
 	// Enable blending
 	glEnable(GL_BLEND);
@@ -181,14 +201,8 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 	// Enable all color component writes.
 	setColorMask(true, true, true, true);
 
-	// Enable line/point smoothing.
-	setLineStyle(LINE_SMOOTH);
-	glEnable(GL_POINT_SMOOTH);
-	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
-
 	// Auto-generated mipmaps should be the best quality possible
-	if (GLEE_VERSION_1_4 || GLEE_SGIS_generate_mipmap)
-		glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
+	glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
 
 	// Enable textures
 	glEnable(GL_TEXTURE_2D);
@@ -409,10 +423,10 @@ void Graphics::discardStencil()
 	activeStencil = false;
 }
 
-Image *Graphics::newImage(love::image::ImageData *data, Image::Format format)
+Image *Graphics::newImage(love::image::ImageData *data, const Image::Flags &flags)
 {
 	// Create the image.
-	Image *image = new Image(data, format);
+	Image *image = new Image(data, flags);
 
 	if (!isCreated())
 		return image;
@@ -430,16 +444,16 @@ Image *Graphics::newImage(love::image::ImageData *data, Image::Format format)
 	if (!success)
 	{
 		image->release();
-		return 0;
+		return nullptr;
 	}
 
 	return image;
 }
 
-Image *Graphics::newImage(love::image::CompressedData *cdata, Image::Format format)
+Image *Graphics::newImage(love::image::CompressedData *cdata, const Image::Flags &flags)
 {
 	// Create the image.
-	Image *image = new Image(cdata, format);
+	Image *image = new Image(cdata, flags);
 
 	if (!isCreated())
 		return image;
@@ -457,7 +471,7 @@ Image *Graphics::newImage(love::image::CompressedData *cdata, Image::Format form
 	if (!success)
 	{
 		image->release();
-		return 0;
+		return nullptr;
 	}
 
 	return image;
@@ -617,23 +631,11 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 	switch (mode)
 	{
 	case BLEND_ALPHA:
-		if (GLEE_VERSION_1_4 || GLEE_EXT_blend_func_separate)
-		{
-			state.srcRGB = GL_SRC_ALPHA;
-			state.srcA = GL_ONE;
-			state.dstRGB = state.dstA = GL_ONE_MINUS_SRC_ALPHA;
-		}
-		else
-		{
-			// Fallback for OpenGL implementations without support for separate blend functions.
-			// This will most likely only be used for the Microsoft software renderer and
-			// since it's still stuck with OpenGL 1.1, the only expected difference is a
-			// different alpha value when reading back the default framebuffer (newScreenshot).
-			state.srcRGB = state.srcA = GL_SRC_ALPHA;
-			state.dstRGB = state.dstA = GL_ONE_MINUS_SRC_ALPHA;
-		}
+		state.srcRGB = GL_SRC_ALPHA;
+		state.srcA = GL_ONE;
+		state.dstRGB = state.dstA = GL_ONE_MINUS_SRC_ALPHA;
 		break;
-	case BLEND_MULTIPLICATIVE:
+	case BLEND_MULTIPLY:
 		state.srcRGB = state.srcA = GL_DST_COLOR;
 		state.dstRGB = state.dstA = GL_ZERO;
 		break;
@@ -641,9 +643,9 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 		state.srcRGB = state.srcA = GL_ONE;
 		state.dstRGB = state.dstA = GL_ONE_MINUS_SRC_ALPHA;
 		break;
-	case BLEND_SUBTRACTIVE:
+	case BLEND_SUBTRACT:
 		state.func = GL_FUNC_REVERSE_SUBTRACT;
-	case BLEND_ADDITIVE:
+	case BLEND_ADD:
 		state.srcRGB = state.srcA = GL_SRC_ALPHA;
 		state.dstRGB = state.dstA = GL_ONE;
 		break;
@@ -666,16 +668,16 @@ Graphics::BlendMode Graphics::getBlendMode() const
 	OpenGL::BlendState state = gl.getBlendState();
 
 	if (state.func == GL_FUNC_REVERSE_SUBTRACT)  // && src == GL_SRC_ALPHA && dst == GL_ONE
-		return BLEND_SUBTRACTIVE;
+		return BLEND_SUBTRACT;
 	// Everything else has equation == GL_FUNC_ADD.
 	else if (state.srcRGB == state.srcA && state.dstRGB == state.dstA)
 	{
 		if (state.srcRGB == GL_SRC_ALPHA && state.dstRGB == GL_ONE)
-			return BLEND_ADDITIVE;
+			return BLEND_ADD;
 		else if (state.srcRGB == GL_SRC_ALPHA && state.dstRGB == GL_ONE_MINUS_SRC_ALPHA)
 			return BLEND_ALPHA; // alpha blend mode fallback for very old OpenGL versions.
 		else if (state.srcRGB == GL_DST_COLOR && state.dstRGB == GL_ZERO)
-			return BLEND_MULTIPLICATIVE;
+			return BLEND_MULTIPLY;
 		else if (state.srcRGB == GL_ONE && state.dstRGB == GL_ONE_MINUS_SRC_ALPHA)
 			return BLEND_PREMULTIPLIED;
 		else if (state.srcRGB == GL_ONE && state.dstRGB == GL_ONE_MINUS_SRC_COLOR)
@@ -747,27 +749,11 @@ void Graphics::setPointSize(float size)
 	glPointSize((GLfloat)size);
 }
 
-void Graphics::setPointStyle(Graphics::PointStyle style)
-{
-	if (style == POINT_SMOOTH)
-		glEnable(GL_POINT_SMOOTH);
-	else // love::POINT_ROUGH
-		glDisable(GL_POINT_SMOOTH);
-}
-
 float Graphics::getPointSize() const
 {
 	GLfloat size;
 	glGetFloatv(GL_POINT_SIZE, &size);
 	return (float)size;
-}
-
-Graphics::PointStyle Graphics::getPointStyle() const
-{
-	if (glIsEnabled(GL_POINT_SMOOTH) == GL_TRUE)
-		return POINT_SMOOTH;
-	else
-		return POINT_ROUGH;
 }
 
 void Graphics::setWireframe(bool enable)
@@ -1016,8 +1002,10 @@ love::image::ImageData *Graphics::newScreenshot(love::image::Image *image, bool 
 	{
 		delete[] pixels;
 		delete[] screenshot;
+
 		if (curcanvas)
 			curcanvas->startGrab(curcanvas->getAttachedCanvases());
+
 		throw love::Exception("Out of memory.");
 	}
 
@@ -1049,8 +1037,10 @@ love::image::ImageData *Graphics::newScreenshot(love::image::Image *image, bool 
 	catch (love::Exception &)
 	{
 		delete[] screenshot;
+
 		if (curcanvas)
 			curcanvas->startGrab(curcanvas->getAttachedCanvases());
+
 		throw;
 	}
 
@@ -1107,7 +1097,6 @@ double Graphics::getSystemLimit(SystemLimit limittype) const
 	case Graphics::LIMIT_MULTI_CANVAS:
 		limit = (double) gl.getMaxRenderTargets();
 		break;
-	case Graphics::LIMIT_CANVAS_FSAA: // For backward-compatibility.
 	case Graphics::LIMIT_CANVAS_MSAA:
 		if (GLEE_VERSION_3_0 || GLEE_ARB_framebuffer_object
 			|| GLEE_EXT_framebuffer_multisample)

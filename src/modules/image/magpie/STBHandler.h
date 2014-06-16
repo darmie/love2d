@@ -18,13 +18,10 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
-#define LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
+#ifndef LOVE_IMAGE_MAGPIE_STB_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_STB_HANDLER_H
 
-// LOVE
-#include "filesystem/FileData.h"
 #include "FormatHandler.h"
-#include "thread/threads.h"
 
 namespace love
 {
@@ -34,16 +31,18 @@ namespace magpie
 {
 
 /**
- * Interface between ImageData and DevIL.
+ * Interface between ImageData and the stb_image library, for decoding TGA and
+ * BMP images.
+ *
+ * We could use stb_image to decode PNG and JPEG as well, but performance and
+ * comprehensive format support is lacking compared to some alternatives, plus
+ * stb_image_write doesn't have JPEG support.
  **/
-class DevilHandler : public FormatHandler
+class STBHandler : public FormatHandler
 {
 public:
 
 	// Implements FormatHandler.
-
-	DevilHandler();
-	virtual ~DevilHandler();
 
 	virtual bool canDecode(love::filesystem::FileData *data);
 	virtual bool canEncode(ImageData::Format format);
@@ -51,14 +50,12 @@ public:
 	virtual DecodedImage decode(love::filesystem::FileData *data);
 	virtual EncodedImage encode(const DecodedImage &img, ImageData::Format format);
 
-private:
+	virtual void free(unsigned char *mem);
 
-	Mutex *mutex;
-
-}; // DevilHandler
+}; // STBHandler
 
 } // magpie
 } // image
 } // love
 
-#endif // LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
+#endif // LOVE_IMAGE_MAGPIE_STB_HANDLER_H
