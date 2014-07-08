@@ -23,7 +23,9 @@
 #include "ImageData.h"
 #include "CompressedData.h"
 
-#include "DevilHandler.h"
+#include "JPEGHandler.h"
+#include "PNGHandler.h"
+#include "STBHandler.h"
 
 namespace love
 {
@@ -34,15 +36,17 @@ namespace magpie
 
 Image::Image()
 {
-	formatHandlers.push_back(new DevilHandler);
+	formatHandlers.push_back(new PNGHandler);
+	formatHandlers.push_back(new JPEGHandler);
+	formatHandlers.push_back(new STBHandler);
 }
 
 Image::~Image()
 {
 	// ImageData objects reference the FormatHandlers in our list, so we should
 	// release them instead of deleting them completely here.
-	for (auto it = formatHandlers.begin(); it != formatHandlers.end(); ++it)
-		(*it)->release();
+	for (FormatHandler *handler : formatHandlers)
+		handler->release();
 }
 
 const char *Image::getName() const

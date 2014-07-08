@@ -213,10 +213,7 @@ struct FramebufferStrategyGL3 : public FramebufferStrategy
 		}
 
 		// set up multiple render targets
-		if (GLEE_VERSION_2_0)
-			glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
-		else if (GLEE_ARB_draw_buffers)
-			glDrawBuffersARB(drawbuffers.size(), &drawbuffers[0]);
+		glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
 	}
 };
 
@@ -342,10 +339,7 @@ struct FramebufferStrategyPackedEXT : public FramebufferStrategy
 		}
 
 		// set up multiple render targets
-		if (GLEE_VERSION_2_0)
-			glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
-		else if (GLEE_ARB_draw_buffers)
-			glDrawBuffersARB(drawbuffers.size(), &drawbuffers[0]);
+		glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
 	}
 };
 
@@ -643,6 +637,9 @@ void Canvas::drawq(Quad *quad, float x, float y, float angle, float sx, float sy
 
 void Canvas::setFilter(const Texture::Filter &f)
 {
+	if (!validateFilter(f, false))
+		throw love::Exception("Invalid texture filter.");
+
 	filter = f;
 	gl.bindTexture(texture);
 	gl.setTextureFilter(filter);
