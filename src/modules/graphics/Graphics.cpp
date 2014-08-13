@@ -79,16 +79,6 @@ bool Graphics::getConstant(LineJoin in, const char  *&out)
 	return lineJoins.find(in, out);
 }
 
-bool Graphics::getConstant(const char *in, PointStyle &out)
-{
-	return pointStyles.find(in, out);
-}
-
-bool Graphics::getConstant(PointStyle in, const char  *&out)
-{
-	return pointStyles.find(in, out);
-}
-
 bool Graphics::getConstant(const char *in, Support &out)
 {
 	return support.find(in, out);
@@ -119,6 +109,16 @@ bool Graphics::getConstant(StackType in, const char *&out)
 	return stackTypes.find(in, out);
 }
 
+bool Graphics::getConstant(const char *in, ClearType &out)
+{
+	return clearTypes.find(in, out);
+}
+
+bool Graphics::getConstant(ClearType in, const char *&out)
+{
+	return clearTypes.find(in, out);
+}
+
 StringMap<Graphics::DrawMode, Graphics::DRAW_MAX_ENUM>::Entry Graphics::drawModeEntries[] =
 {
 	{ "line", Graphics::DRAW_LINE },
@@ -140,9 +140,9 @@ StringMap<Graphics::AlignMode, Graphics::ALIGN_MAX_ENUM> Graphics::alignModes(Gr
 StringMap<Graphics::BlendMode, Graphics::BLEND_MAX_ENUM>::Entry Graphics::blendModeEntries[] =
 {
 	{ "alpha", Graphics::BLEND_ALPHA },
-	{ "additive", Graphics::BLEND_ADDITIVE },
-	{ "subtractive", Graphics::BLEND_SUBTRACTIVE },
-	{ "multiplicative", Graphics::BLEND_MULTIPLICATIVE },
+	{ "add", Graphics::BLEND_ADD },
+	{ "subtract", Graphics::BLEND_SUBTRACT },
+	{ "multiply", Graphics::BLEND_MULTIPLY },
 	{ "premultiplied", Graphics::BLEND_PREMULTIPLIED },
 	{ "screen", Graphics::BLEND_SCREEN },
 	{ "replace", Graphics::BLEND_REPLACE },
@@ -167,25 +167,9 @@ StringMap<Graphics::LineJoin, Graphics::LINE_JOIN_MAX_ENUM>::Entry Graphics::lin
 
 StringMap<Graphics::LineJoin, Graphics::LINE_JOIN_MAX_ENUM> Graphics::lineJoins(Graphics::lineJoinEntries, sizeof(Graphics::lineJoinEntries));
 
-StringMap<Graphics::PointStyle, Graphics::POINT_MAX_ENUM>::Entry Graphics::pointStyleEntries[] =
-{
-	{ "smooth", Graphics::POINT_SMOOTH },
-	{ "rough", Graphics::POINT_ROUGH }
-};
-
-StringMap<Graphics::PointStyle, Graphics::POINT_MAX_ENUM> Graphics::pointStyles(Graphics::pointStyleEntries, sizeof(Graphics::pointStyleEntries));
-
 StringMap<Graphics::Support, Graphics::SUPPORT_MAX_ENUM>::Entry Graphics::supportEntries[] =
 {
-	{ "canvas", Graphics::SUPPORT_CANVAS },
-	{ "hdrcanvas", Graphics::SUPPORT_HDR_CANVAS },
 	{ "multicanvas", Graphics::SUPPORT_MULTI_CANVAS },
-	{ "shader", Graphics::SUPPORT_SHADER },
-	{ "npot", Graphics::SUPPORT_NPOT },
-	{ "subtractive", Graphics::SUPPORT_SUBTRACTIVE },
-	{ "mipmap", Graphics::SUPPORT_MIPMAP },
-	{ "dxt", Graphics::SUPPORT_DXT },
-	{ "bc5", Graphics::SUPPORT_BC5 },
 	{ "srgb", Graphics::SUPPORT_SRGB },
 };
 
@@ -196,7 +180,6 @@ StringMap<Graphics::SystemLimit, Graphics::LIMIT_MAX_ENUM>::Entry Graphics::syst
 	{"pointsize", Graphics::LIMIT_POINT_SIZE},
 	{"texturesize", Graphics::LIMIT_TEXTURE_SIZE},
 	{"multicanvas", Graphics::LIMIT_MULTI_CANVAS},
-	{"canvasfsaa", Graphics::LIMIT_CANVAS_FSAA},
 	{"canvasmsaa", Graphics::LIMIT_CANVAS_MSAA},
 };
 
@@ -209,6 +192,14 @@ StringMap<Graphics::StackType, Graphics::STACK_MAX_ENUM>::Entry Graphics::stackT
 };
 
 StringMap<Graphics::StackType, Graphics::STACK_MAX_ENUM> Graphics::stackTypes(Graphics::stackTypeEntries, sizeof(Graphics::stackTypeEntries));
+
+StringMap<Graphics::ClearType, Graphics::CLEAR_MAX_ENUM>::Entry Graphics::clearTypeEntries[] =
+{
+	{"all", Graphics::CLEAR_ALL},
+	{"stencil", Graphics::CLEAR_STENCIL},
+};
+
+StringMap<Graphics::ClearType, Graphics::CLEAR_MAX_ENUM> Graphics::clearTypes(Graphics::clearTypeEntries, sizeof(Graphics::clearTypeEntries));
 
 } // graphics
 } // love

@@ -47,7 +47,8 @@ Graphics::Graphics()
 	: width(0)
 	, height(0)
 	, created(false)
-	, activeStencil(false)
+	, writingToStencil(false)
+	, displayedMinReqWarning(false)
 {
 	states.reserve(10);
 	states.push_back(DisplayState());
@@ -88,12 +89,13 @@ void Graphics::restoreState(const DisplayState &s)
 	setLineJoin(s.lineJoin);
 
 	setPointSize(s.pointSize);
-	setPointStyle(s.pointStyle);
 
 	if (s.scissor)
 		setScissor(s.scissorBox.x, s.scissorBox.y, s.scissorBox.w, s.scissorBox.h);
 	else
 		setScissor();
+
+	setStencilTest(s.stencilTest, s.stencilInvert);
 
 	setFont(s.font.get());
 	setShader(s.shader.get());
@@ -124,9 +126,6 @@ void Graphics::restoreStateChecked(const DisplayState &s)
 	if (s.pointSize != cur.pointSize)
 		setPointSize(s.pointSize);
 
-	if (s.pointStyle != cur.pointStyle)
-		setPointStyle(s.pointStyle);
-
 	if (s.scissor != cur.scissor || (s.scissor && !(s.scissorBox == cur.scissorBox)))
 	{
 		if (s.scissor)
@@ -134,6 +133,9 @@ void Graphics::restoreStateChecked(const DisplayState &s)
 		else
 			setScissor();
 	}
+
+	if (s.stencilTest != cur.stencilTest || s.stencilInvert != cur.stencilInvert)
+		setStencilTest(s.stencilTest, s.stencilInvert);
 
 	setFont(s.font.get());
 	setShader(s.shader.get());
@@ -192,16 +194,38 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 	this->width = width;
 	this->height = height;
 
-	// Okay, setup OpenGL.
 	gl.initContext();
+
+	// Does the system meet LOVE's minimum requirements for graphics?
+	if (!(GLEE_VERSION_2_0 && Shader::isSupported() && Canvas::isSupported())
+		&& !displayedMinReqWarning)
+	{
+		love::window::Window::MessageBoxType type = love::window::Window::MESSAGEBOX_ERROR;
+
+		std::string title = "Minimum system requirements not met!";
+
+		std::string message;
+		message += "Detected OpenGL version: ";
+		message += (const char *) glGetString(GL_VERSION);
+		message += "\nRequired OpenGL version: 2.1."; // -ish
+		message += "\nThe program may crash or have graphical issues.";
+
+		::printf("%s\n%s\n", title.c_str(), message.c_str());
+		currentWindow->showMessageBox(type, title, message, true);
+
+		// We should only show the message once, instead of after every setMode.
+		displayedMinReqWarning = true;
+	}
+
+	// Okay, setup OpenGL.
+	gl.setupContext();
 
 	created = true;
 
 	setViewportSize(width, height);
 
 	// Make sure antialiasing works when set elsewhere
-	if (GLEE_VERSION_1_3 || GLEE_ARB_multisample)
-		glEnable(GL_MULTISAMPLE);
+	glEnable(GL_MULTISAMPLE);
 
 	// Enable blending
 	glEnable(GL_BLEND);
@@ -210,14 +234,8 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 	bool colormask[] = {true, true, true, true};
 	setColorMask(colormask);
 
-	// Enable line/point smoothing.
-	setLineStyle(LINE_SMOOTH);
-	glEnable(GL_POINT_SMOOTH);
-	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
-
 	// Auto-generated mipmaps should be the best quality possible
-	if (GLEE_VERSION_1_4 || GLEE_SGIS_generate_mipmap)
-		glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
+	glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
 
 	// Enable textures
 	glEnable(GL_TEXTURE_2D);
@@ -337,14 +355,27 @@ void Graphics::setDebug(bool enable)
 void Graphics::reset()
 {
 	DisplayState s;
-	discardStencil();
-	origin();
+	drawToStencilBuffer(false);
 	restoreState(s);
+	origin();
 }
 
-void Graphics::clear()
+void Graphics::clear(ClearType type)
 {
-	glClear(GL_COLOR_BUFFER_BIT);
+	GLbitfield mask = 0;
+
+	switch (type)
+	{
+	case CLEAR_ALL:
+	default:
+		mask = GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT;
+		break;
+	case CLEAR_STENCIL:
+		mask = GL_STENCIL_BUFFER_BIT;
+		break;
+	}
+
+	glClear(mask);
 }
 
 void Graphics::present()
@@ -396,44 +427,74 @@ bool Graphics::getScissor(int &x, int &y, int &width, int &height) const
 	return states.back().scissor;
 }
 
-void Graphics::defineStencil()
+void Graphics::drawToStencilBuffer(bool enable)
 {
+	if (writingToStencil == enable)
+		return;
+
+	writingToStencil = enable;
+
+	if (!enable)
+	{
+		const DisplayState &state = states.back();
+
+		// Revert the color write mask.
+		setColorMask(state.colorMask);
+
+		// Use the user-set stencil test state when writes are disabled.
+		setStencilTest(state.stencilTest, state.stencilInvert);
+		return;
+	}
+
 	// Make sure the active canvas has a stencil buffer.
 	if (Canvas::current)
 		Canvas::current->checkCreateStencil();
 
-	// Disable color writes but don't save the mask values.
+	// Disable color writes but don't save the state for it.
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 
-	glClear(GL_STENCIL_BUFFER_BIT);
+	// The stencil test must be enabled in order to write to the stencil buffer.
 	glEnable(GL_STENCIL_TEST);
+
 	glStencilFunc(GL_ALWAYS, 1, 1);
 	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-
-	activeStencil = true;
 }
 
-void Graphics::useStencil(bool invert)
+void Graphics::setStencilTest(bool enable, bool invert)
 {
-	glStencilFunc(GL_EQUAL, (GLint)(!invert), 1); // invert ? 0 : 1
-	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-	setColorMask(states.back().colorMask);
-}
+	DisplayState &state = states.back();
+	state.stencilTest = enable;
+	state.stencilInvert = invert;
 
-void Graphics::discardStencil()
-{
-	if (!activeStencil)
+	if (writingToStencil)
 		return;
 
-	setColorMask(states.back().colorMask);
-	glDisable(GL_STENCIL_TEST);
-	activeStencil = false;
+	if (!enable)
+	{
+		glDisable(GL_STENCIL_TEST);
+		return;
+	}
+
+	// Make sure the active canvas has a stencil buffer.
+	if (Canvas::current)
+		Canvas::current->checkCreateStencil();
+
+	glEnable(GL_STENCIL_TEST);
+	glStencilFunc(GL_EQUAL, invert ? 0 : 1, 1);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 }
 
-Image *Graphics::newImage(love::image::ImageData *data, Image::Format format)
+void Graphics::getStencilTest(bool &enable, bool &invert)
+{
+	const DisplayState &state = states.back();
+	enable = state.stencilTest;
+	invert = state.stencilInvert;
+}
+
+Image *Graphics::newImage(love::image::ImageData *data, const Image::Flags &flags)
 {
 	// Create the image.
-	Image *image = new Image(data, format);
+	Image *image = new Image(data, flags);
 
 	if (!isCreated())
 		return image;
@@ -451,16 +512,16 @@ Image *Graphics::newImage(love::image::ImageData *data, Image::Format format)
 	if (!success)
 	{
 		image->release();
-		return 0;
+		return nullptr;
 	}
 
 	return image;
 }
 
-Image *Graphics::newImage(love::image::CompressedData *cdata, Image::Format format)
+Image *Graphics::newImage(love::image::CompressedData *cdata, const Image::Flags &flags)
 {
 	// Create the image.
-	Image *image = new Image(cdata, format);
+	Image *image = new Image(cdata, flags);
 
 	if (!isCreated())
 		return image;
@@ -478,7 +539,7 @@ Image *Graphics::newImage(love::image::CompressedData *cdata, Image::Format form
 	if (!success)
 	{
 		image->release();
-		return 0;
+		return nullptr;
 	}
 
 	return image;
@@ -728,23 +789,11 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 	switch (mode)
 	{
 	case BLEND_ALPHA:
-		if (GLEE_VERSION_1_4 || GLEE_EXT_blend_func_separate)
-		{
-			blend.srcRGB = GL_SRC_ALPHA;
-			blend.srcA = GL_ONE;
-			blend.dstRGB = blend.dstA = GL_ONE_MINUS_SRC_ALPHA;
-		}
-		else
-		{
-			// Fallback for OpenGL implementations without support for separate blend functions.
-			// This will most likely only be used for the Microsoft software renderer and
-			// since it's still stuck with OpenGL 1.1, the only expected difference is a
-			// different alpha value when reading back the default framebuffer (newScreenshot).
-			blend.srcRGB = blend.srcA = GL_SRC_ALPHA;
-			blend.dstRGB = blend.dstA = GL_ONE_MINUS_SRC_ALPHA;
-		}
+		blend.srcRGB = GL_SRC_ALPHA;
+		blend.srcA = GL_ONE;
+		blend.dstRGB = blend.dstA = GL_ONE_MINUS_SRC_ALPHA;
 		break;
-	case BLEND_MULTIPLICATIVE:
+	case BLEND_MULTIPLY:
 		blend.srcRGB = blend.srcA = GL_DST_COLOR;
 		blend.dstRGB = blend.dstA = GL_ZERO;
 		break;
@@ -752,9 +801,9 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 		blend.srcRGB = blend.srcA = GL_ONE;
 		blend.dstRGB = blend.dstA = GL_ONE_MINUS_SRC_ALPHA;
 		break;
-	case BLEND_SUBTRACTIVE:
+	case BLEND_SUBTRACT:
 		blend.func = GL_FUNC_REVERSE_SUBTRACT;
-	case BLEND_ADDITIVE:
+	case BLEND_ADD:
 		blend.srcRGB = blend.srcA = GL_SRC_ALPHA;
 		blend.dstRGB = blend.dstA = GL_ONE;
 		break;
@@ -836,24 +885,9 @@ void Graphics::setPointSize(float size)
 	states.back().pointSize = size;
 }
 
-void Graphics::setPointStyle(Graphics::PointStyle style)
-{
-	if (style == POINT_SMOOTH)
-		glEnable(GL_POINT_SMOOTH);
-	else // love::POINT_ROUGH
-		glDisable(GL_POINT_SMOOTH);
-
-	states.back().pointStyle = style;
-}
-
 float Graphics::getPointSize() const
 {
 	return states.back().pointSize;
-}
-
-Graphics::PointStyle Graphics::getPointStyle() const
-{
-	return states.back().pointStyle;
 }
 
 void Graphics::setWireframe(bool enable)
@@ -1184,7 +1218,6 @@ double Graphics::getSystemLimit(SystemLimit limittype) const
 	case Graphics::LIMIT_MULTI_CANVAS:
 		limit = (double) gl.getMaxRenderTargets();
 		break;
-	case Graphics::LIMIT_CANVAS_FSAA: // For backward-compatibility.
 	case Graphics::LIMIT_CANVAS_MSAA:
 		if (GLEE_VERSION_3_0 || GLEE_ARB_framebuffer_object
 			|| GLEE_EXT_framebuffer_multisample)
@@ -1205,24 +1238,8 @@ bool Graphics::isSupported(Support feature) const
 {
 	switch (feature)
 	{
-	case SUPPORT_CANVAS:
-		return Canvas::isSupported();
-	case SUPPORT_HDR_CANVAS:
-		return Canvas::isFormatSupported(Canvas::FORMAT_HDR);
 	case SUPPORT_MULTI_CANVAS:
 		return Canvas::isMultiCanvasSupported();
-	case SUPPORT_SHADER:
-		return Shader::isSupported();
-	case SUPPORT_NPOT:
-		return Image::hasNpot();
-	case SUPPORT_SUBTRACTIVE:
-		return (GLEE_VERSION_1_4 || GLEE_ARB_imaging) || (GLEE_EXT_blend_minmax && GLEE_EXT_blend_subtract);
-	case SUPPORT_MIPMAP:
-		return Image::hasMipmapSupport();
-	case SUPPORT_DXT:
-		return Image::hasCompressedTextureSupport(image::CompressedData::FORMAT_DXT5);
-	case SUPPORT_BC5:
-		return Image::hasCompressedTextureSupport(image::CompressedData::FORMAT_BC5);
 	case SUPPORT_SRGB:
 		// sRGB support for the screen is guaranteed if it's supported as a
 		// Canvas format.
@@ -1308,9 +1325,10 @@ Graphics::DisplayState::DisplayState()
 	, lineStyle(LINE_SMOOTH)
 	, lineJoin(LINE_JOIN_MITER)
 	, pointSize(1.0f)
-	, pointStyle(POINT_SMOOTH)
 	, scissor(false)
 	, scissorBox()
+	, stencilTest(false)
+	, stencilInvert(false)
 	, font(nullptr)
 	, shader(nullptr)
 	, wireframe(false)
@@ -1328,9 +1346,10 @@ Graphics::DisplayState::DisplayState(const DisplayState &other)
 	, lineStyle(other.lineStyle)
 	, lineJoin(other.lineJoin)
 	, pointSize(other.pointSize)
-	, pointStyle(other.pointStyle)
 	, scissor(other.scissor)
 	, scissorBox(other.scissorBox)
+	, stencilTest(other.stencilTest)
+	, stencilInvert(other.stencilInvert)
 	, font(other.font)
 	, shader(other.shader)
 	, canvases(other.canvases)
@@ -1353,9 +1372,10 @@ Graphics::DisplayState &Graphics::DisplayState::operator = (const DisplayState &
 	lineStyle = other.lineStyle;
 	lineJoin = other.lineJoin;
 	pointSize = other.pointSize;
-	pointStyle = other.pointStyle;
 	scissor = other.scissor;
 	scissorBox = other.scissorBox;
+	stencilTest = other.stencilTest;
+	stencilInvert = other.stencilInvert;
 
 	font = other.font;
 	shader = other.shader;

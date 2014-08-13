@@ -213,10 +213,7 @@ struct FramebufferStrategyGL3 : public FramebufferStrategy
 		}
 
 		// set up multiple render targets
-		if (GLEE_VERSION_2_0)
-			glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
-		else if (GLEE_ARB_draw_buffers)
-			glDrawBuffersARB(drawbuffers.size(), &drawbuffers[0]);
+		glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
 	}
 };
 
@@ -342,10 +339,7 @@ struct FramebufferStrategyPackedEXT : public FramebufferStrategy
 		}
 
 		// set up multiple render targets
-		if (GLEE_VERSION_2_0)
-			glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
-		else if (GLEE_ARB_draw_buffers)
-			glDrawBuffersARB(drawbuffers.size(), &drawbuffers[0]);
+		glDrawBuffers(drawbuffers.size(), &drawbuffers[0]);
 	}
 };
 
@@ -638,6 +632,9 @@ void Canvas::drawq(Quad *quad, float x, float y, float angle, float sx, float sy
 
 void Canvas::setFilter(const Texture::Filter &f)
 {
+	if (!validateFilter(f, false))
+		throw love::Exception("Invalid texture filter.");
+
 	filter = f;
 	gl.bindTexture(texture);
 	gl.setTextureFilter(filter);
@@ -826,7 +823,7 @@ void Canvas::clear(Color c)
 		// Don't use the state-shadowed gl.setClearColor because we want to save
 		// the previous clear color.
 		glClearColor(glcolor[0], glcolor[1], glcolor[2], glcolor[3]);
-		glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if (attachedCanvases.size() > 0)
 			strategy->setAttachments(attachedCanvases);
@@ -852,6 +849,12 @@ bool Canvas::checkCreateStencil()
 		strategy->bindFBO(fbo);
 
 	bool success = strategy->createStencil(width, height, msaa_samples, depth_stencil);
+
+	if (success)
+	{
+		// We don't want the stencil buffer filled with garbage.
+		glClear(GL_STENCIL_BUFFER_BIT);
+	}
 
 	if (current && current != this)
 		strategy->bindFBO(current->fbo);

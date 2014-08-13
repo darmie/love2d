@@ -18,26 +18,20 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_FILESYSTEM_WRAP_FILESYSTEM_H
-#define LOVE_FILESYSTEM_WRAP_FILESYSTEM_H
+#ifndef LOVE_FILESYSTEM_PHYSFS_WRAP_FILESYSTEM_H
+#define LOVE_FILESYSTEM_PHYSFS_WRAP_FILESYSTEM_H
 
 // LOVE
-#include "common/runtime.h"
-#include "FileData.h"
+#include "Filesystem.h"
+#include "wrap_File.h"
+#include "wrap_FileData.h"
 
 namespace love
 {
 namespace filesystem
 {
-
-/**
- * Gets FileData at the specified index. If the index contains a filepath or
- * a File object, the FileData will be created from that.
- * Note that this function retains the FileData object (possibly by creating it),
- * so a matching release() is required!
- * May trigger a Lua error.
- **/
-FileData *luax_getfiledata(lua_State *L, int idx);
+namespace physfs
+{
 
 bool hack_setupWriteDirectory();
 int w_init(lua_State *L);
@@ -70,14 +64,12 @@ int w_lines(lua_State *L);
 int w_load(lua_State *L);
 int w_getLastModified(lua_State *L);
 int w_getSize(lua_State *L);
-int w_setSymlinksEnabled(lua_State *L);
-int w_areSymlinksEnabled(lua_State *L);
-int w_isSymlink(lua_State *L);
 int loader(lua_State *L);
 int extloader(lua_State *L);
 extern "C" LOVE_EXPORT int luaopen_love_filesystem(lua_State *L);
 
+} // physfs
 } // filesystem
 } // love
 
-#endif // LOVE_FILESYSTEM_WRAP_FILESYSTEM_H
+#endif // LOVE_FILESYSTEM_PHYSFS_WRAP_FILESYSTEM_H

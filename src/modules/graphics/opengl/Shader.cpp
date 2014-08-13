@@ -717,8 +717,8 @@ void Shader::checkSetScreenParams()
 		return;
 
 	// In the shader, we do pixcoord.y = gl_FragCoord.y * params.z + params.w.
-	// This lets us flip pixcoord.y when needed, to be consistent (Canvases
-	// have flipped y-values for pixel coordinates.)
+	// This lets us flip pixcoord.y when needed, to be consistent (drawing with
+	// no Canvas active makes the y-values for pixel coordinates flipped.)
 	GLfloat params[] = {
 		(GLfloat) view.w, (GLfloat) view.h,
 		0.0f, 0.0f,
@@ -726,16 +726,16 @@ void Shader::checkSetScreenParams()
 
 	if (Canvas::current != nullptr)
 	{
-		// gl_FragCoord.y is flipped in Canvases, so we un-flip:
-		// pixcoord.y = gl_FragCoord.y * -1.0 + height.
-		params[2] = -1.0f;
-		params[3] = (GLfloat) view.h;
-	}
-	else
-	{
 		// No flipping: pixcoord.y = gl_FragCoord.y * 1.0 + 0.0.
 		params[2] = 1.0f;
 		params[3] = 0.0f;
+	}
+	else
+	{
+		// gl_FragCoord.y is flipped when drawing to the screen, so we un-flip:
+		// pixcoord.y = gl_FragCoord.y * -1.0 + height.
+		params[2] = -1.0f;
+		params[3] = (GLfloat) view.h;
 	}
 
 	sendBuiltinFloat(BUILTIN_SCREEN_SIZE, 4, params, 1);
@@ -751,11 +751,7 @@ const std::map<std::string, Object *> &Shader::getBoundRetainables() const
 
 std::string Shader::getGLSLVersion()
 {
-	const char *tmp = nullptr;
-
-	// GL_SHADING_LANGUAGE_VERSION isn't available in OpenGL < 2.0.
-	if (GLEE_VERSION_2_0 || GLEE_ARB_shading_language_100)
-		tmp = (const char *) glGetString(GL_SHADING_LANGUAGE_VERSION);
+	const char *tmp = (const char *) glGetString(GL_SHADING_LANGUAGE_VERSION);
 
 	if (tmp == nullptr)
 		return "0.0";
@@ -772,7 +768,7 @@ std::string Shader::getGLSLVersion()
 
 bool Shader::isSupported()
 {
-	return GLEE_VERSION_2_0 && getGLSLVersion() >= "1.2";
+	return getGLSLVersion() >= "1.2";
 }
 
 bool Shader::getConstant(const char *in, UniformType &out)

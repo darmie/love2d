@@ -208,7 +208,7 @@ void SpriteBatch::setBufferSize(int newsize)
 	if (newsize == size)
 		return;
 
-	// Map (lock) the old VertexBuffer to get a pointer to its data.
+	// Map the old VertexBuffer to get a pointer to its data.
 	void *old_data = nullptr;
 	{
 		VertexBuffer::Bind bind(*array_buf);
@@ -256,7 +256,7 @@ int SpriteBatch::getBufferSize() const
 
 void SpriteBatch::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
 {
-	const size_t pos_offset = offsetof(Vertex, x);
+	const size_t pos_offset   = offsetof(Vertex, x);
 	const size_t texel_offset = offsetof(Vertex, s);
 	const size_t color_offset = offsetof(Vertex, r);
 
