@@ -277,13 +277,6 @@ int w_getSourceBaseDirectory(lua_State *L)
 	return 1;
 }
 
-int w_exists(lua_State *L)
-{
-	const char *arg = luaL_checkstring(L, 1);
-	luax_pushboolean(L, instance()->exists(arg));
-	return 1;
-}
-
 int w_isDirectory(lua_State *L)
 {
 	const char *arg = luaL_checkstring(L, 1);
@@ -530,7 +523,7 @@ int loader(lua_State *L)
 	}
 
 	// Check whether file exists.
-	if (instance()->exists(tmp.c_str()))
+	if (instance()->isFile(tmp.c_str()))
 	{
 		lua_pop(L, 1);
 		lua_pushstring(L, tmp.c_str());
@@ -551,7 +544,7 @@ int loader(lua_State *L)
 	if (instance()->isDirectory(tmp.c_str()))
 	{
 		tmp += "/init.lua";
-		if (instance()->exists(tmp.c_str()))
+		if (instance()->isFile(tmp.c_str()))
 		{
 			lua_pop(L, 1);
 			lua_pushstring(L, tmp.c_str());
@@ -658,7 +651,6 @@ static const luaL_Reg functions[] =
 	{ "getAppdataDirectory", w_getAppdataDirectory },
 	{ "getSaveDirectory", w_getSaveDirectory },
 	{ "getSourceBaseDirectory", w_getSourceBaseDirectory },
-	{ "exists", w_exists },
 	{ "isDirectory", w_isDirectory },
 	{ "isFile", w_isFile },
 	{ "createDirectory", w_createDirectory },
