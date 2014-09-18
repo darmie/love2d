@@ -44,9 +44,15 @@ int w_reset(lua_State *)
 	return 0;
 }
 
-int w_clear(lua_State *)
+int w_clear(lua_State *L)
 {
-	instance()->clear();
+	Graphics::ClearType type = Graphics::CLEAR_ALL;
+
+	const char *tname = lua_isnoneornil(L, 1) ? nullptr : luaL_checkstring(L, 1);
+	if (tname && !Graphics::getConstant(tname, type))
+		return luaL_error(L, "Invalid graphics clear type: %s", tname);
+
+	instance()->clear(type);
 	return 0;
 }
 
@@ -118,38 +124,42 @@ int w_getScissor(lua_State *L)
 	return 4;
 }
 
-static int setStencil(lua_State *L, bool invert)
+int w_stencil(lua_State *L)
 {
-	// no argument -> clear stencil
-	if (lua_isnoneornil(L, 1))
-	{
-		instance()->discardStencil();
-		return 0;
-	}
-
 	luaL_checktype(L, 1, LUA_TFUNCTION);
 
-	instance()->defineStencil();
-	lua_call(L, lua_gettop(L) - 1, 0); // call stencil(...)
-	instance()->useStencil(invert);
+	instance()->drawToStencilBuffer(true);
+
+	// Call stencilfunc(...)
+	lua_call(L, lua_gettop(L) - 1, 0);
+
+	instance()->drawToStencilBuffer(false);
 
 	return 0;
 }
 
-int w_setStencil(lua_State *L)
+int w_setStencilTest(lua_State *L)
 {
-	return setStencil(L, false);
+	bool enable = luax_toboolean(L, 1);
+	bool invert = luax_toboolean(L, 2);
+	instance()->setStencilTest(enable, invert);
+	return 0;
 }
 
-int w_setInvertedStencil(lua_State *L)
+int w_getStencilTest(lua_State *L)
 {
-	return setStencil(L, true);
+	bool enabled, inverted;
+	instance()->getStencilTest(enabled, inverted);
+	luax_pushboolean(L, enabled);
+	luax_pushboolean(L, inverted);
+	return 2;
 }
 
-int w_getMaxTextureSize(lua_State *L)
+static const char *imageFlagName(Image::FlagType flagtype)
 {
-	lua_pushinteger(L, instance()->getSystemLimit(Graphics::LIMIT_TEXTURE_SIZE));
-	return 1;
+	const char *name = nullptr;
+	Image::getConstant(flagtype, name);
+	return name;
 }
 
 int w_newImage(lua_State *L)
@@ -157,11 +167,13 @@ int w_newImage(lua_State *L)
 	love::image::ImageData *data = nullptr;
 	love::image::CompressedData *cdata = nullptr;
 
-	Image::Format format = Image::FORMAT_NORMAL;
-	const char *fstr = lua_isnoneornil(L, 2) ? nullptr : luaL_checkstring(L, 2);
-
-	if (fstr != nullptr && !Image::getConstant(fstr, format))
-		return luaL_error(L, "Invalid Image format: %s", fstr);
+	Image::Flags flags;
+	if (!lua_isnoneornil(L, 2))
+	{
+		luaL_checktype(L, 2, LUA_TTABLE);
+		flags.mipmaps = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_MIPMAPS), flags.mipmaps);
+		flags.sRGB = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_SRGB), flags.sRGB);
+	}
 
 	bool releasedata = false;
 
@@ -205,9 +217,9 @@ int w_newImage(lua_State *L)
 	luax_catchexcept(L,
 		[&]() {
 			if (cdata)
-				image = instance()->newImage(cdata, format);
+				image = instance()->newImage(cdata, flags);
 			else if (data)
-				image = instance()->newImage(data, format);
+				image = instance()->newImage(data, flags);
 		},
 		[&]() {
 			if (releasedata && data)
@@ -376,9 +388,6 @@ int w_newCanvas(lua_State *L)
 
 int w_newShader(lua_State *L)
 {
-	if (!Shader::isSupported())
-		return luaL_error(L, "Sorry, your graphics card does not support shaders.");
-
 	// clamp stack to 2 elements
 	lua_settop(L, 2);
 
@@ -836,37 +845,9 @@ int w_setPointSize(lua_State *L)
 	return 0;
 }
 
-int w_setPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style;
-
-	const char *str = luaL_checkstring(L, 1);
-	if (!Graphics::getConstant(str, style))
-		return luaL_error(L, "Invalid point style: %s", str);
-
-	instance()->setPointStyle(style);
-	return 0;
-}
-
 int w_getPointSize(lua_State *L)
 {
 	lua_pushnumber(L, instance()->getPointSize());
-	return 1;
-}
-
-int w_getPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style = instance()->getPointStyle();
-	const char *str;
-	if (!Graphics::getConstant(style, str))
-		return luaL_error(L, "Unknown point style");
-	lua_pushstring(L, str);
-	return 1;
-}
-
-int w_getMaxPointSize(lua_State *L)
-{
-	lua_pushnumber(L, instance()->getSystemLimit(Graphics::LIMIT_POINT_SIZE));
 	return 1;
 }
 
@@ -897,8 +878,8 @@ int w_newScreenshot(lua_State *L)
 
 int w_setCanvas(lua_State *L)
 {
-	// discard stencil testing
-	instance()->discardStencil();
+	// Disable stencil writes.
+	instance()->drawToStencilBuffer(false);
 
 	// called with none -> reset to default buffer
 	if (lua_isnoneornil(L, 1))
@@ -979,25 +960,42 @@ int w_getShader(lua_State *L)
 	return 1;
 }
 
-int w_isSupported(lua_State *L)
+int w_setDefaultShaderCode(lua_State *L)
 {
-	bool supported = true;
+	luaL_checktype(L, 1, LUA_TTABLE);
 
-	for (int i = 1; i <= lua_gettop(L); i++)
+	lua_getfield(L, 1, "opengl");
+	lua_rawgeti(L, -1, 1);
+	lua_rawgeti(L, -2, 2);
+
+	Shader::ShaderSources openglcode;
+	openglcode[Shader::TYPE_VERTEX] = luax_checkstring(L, -2);
+	openglcode[Shader::TYPE_PIXEL] = luax_checkstring(L, -1);
+
+	lua_pop(L, 3);
+
+	Shader::defaultCode[0] = openglcode;
+
+	return 0;
+}
+
+
+int w_getSupported(lua_State *L)
+{
+	lua_createtable(L, 0, (int) Graphics::SUPPORT_MAX_ENUM);
+
+	for (int i = 0; i < (int) Graphics::SUPPORT_MAX_ENUM; i++)
 	{
-		const char *str = luaL_checkstring(L, i);
-		Graphics::Support feature;
-		if (!Graphics::getConstant(str, feature))
-			return luaL_error(L, "Invalid graphics feature: %s", str);
+		Graphics::Support feature = (Graphics::Support) i;
+		const char *name = nullptr;
 
-		if (!instance()->isSupported(feature))
-		{
-			supported = false;
-			break;
-		}
+		if (!Graphics::getConstant(feature, name))
+			continue;
+
+		luax_pushboolean(L, instance()->isSupported(feature));
+		lua_setfield(L, -2, name);
 	}
 
-	luax_pushboolean(L, supported);
 	return 1;
 }
 
@@ -1054,6 +1052,25 @@ int w_getRendererInfo(lua_State *L)
 	return 4;
 }
 
+int w_getSystemLimits(lua_State *L)
+{
+	lua_createtable(L, 0, (int) Graphics::LIMIT_MAX_ENUM);
+
+	for (int i = 0; i < (int) Graphics::LIMIT_MAX_ENUM; i++)
+	{
+		Graphics::SystemLimit limittype = (Graphics::SystemLimit) i;
+		const char *name = nullptr;
+
+		if (!Graphics::getConstant(limittype, name))
+			continue;
+
+		lua_pushnumber(L, instance()->getSystemLimit(limittype));
+		lua_setfield(L, -2, name);
+	}
+
+	return 1;
+}
+
 int w_getStats(lua_State *L)
 {
 	Graphics::Stats stats = instance()->getStats();
@@ -1085,19 +1102,7 @@ int w_getStats(lua_State *L)
 	Graphics::getConstant(Graphics::STAT_TEXTURE_MEMORY, sname);
 	lua_pushnumber(L, (lua_Number) stats.textureMemory);
 	lua_setfield(L, -2, sname);
-
-	return 1;
-}
-
-int w_getSystemLimit(lua_State *L)
-{
-	const char *limitstr = luaL_checkstring(L, 1);
-	Graphics::SystemLimit limittype;
-
-	if (!Graphics::getConstant(limitstr, limittype))
-		return luaL_error(L, "Invalid system limit type: %s", limitstr);
-
-	lua_pushnumber(L, instance()->getSystemLimit(limittype));
+	
 	return 1;
 }
 
@@ -1444,9 +1449,7 @@ static const luaL_Reg functions[] =
 	{ "getLineStyle", w_getLineStyle },
 	{ "getLineJoin", w_getLineJoin },
 	{ "setPointSize", w_setPointSize },
-	{ "setPointStyle", w_setPointStyle },
 	{ "getPointSize", w_getPointSize },
-	{ "getPointStyle", w_getPointStyle },
 	{ "setWireframe", w_setWireframe },
 	{ "isWireframe", w_isWireframe },
 	{ "newScreenshot", w_newScreenshot },
@@ -1455,13 +1458,14 @@ static const luaL_Reg functions[] =
 
 	{ "setShader", w_setShader },
 	{ "getShader", w_getShader },
+	{ "_setDefaultShaderCode", w_setDefaultShaderCode },
 
-	{ "isSupported", w_isSupported },
+	{ "getSupported", w_getSupported },
 	{ "getCanvasFormats", w_getCanvasFormats },
 	{ "getCompressedImageFormats", w_getCompressedImageFormats },
 	{ "getRendererInfo", w_getRendererInfo },
+	{ "getSystemLimits", w_getSystemLimits },
 	{ "getStats", w_getStats },
-	{ "getSystemLimit", w_getSystemLimit },
 
 	{ "draw", w_draw },
 
@@ -1476,8 +1480,9 @@ static const luaL_Reg functions[] =
 	{ "setScissor", w_setScissor },
 	{ "getScissor", w_getScissor },
 
-	{ "setStencil", w_setStencil },
-	{ "setInvertedStencil", w_setInvertedStencil },
+	{ "stencil", w_stencil },
+	{ "setStencilTest", w_setStencilTest },
+	{ "getStencilTest", w_getStencilTest },
 
 	{ "point", w_point },
 	{ "line", w_line },
@@ -1494,10 +1499,6 @@ static const luaL_Reg functions[] =
 	{ "translate", w_translate },
 	{ "shear", w_shear },
 	{ "origin", w_origin },
-
-	// Deprecated since 0.9.1.
-	{ "getMaxImageSize", w_getMaxTextureSize },
-	{ "getMaxPointSize", w_getMaxPointSize },
 
 	{ 0, 0 }
 };

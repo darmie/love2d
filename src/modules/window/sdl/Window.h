@@ -55,9 +55,6 @@ public:
 
 	std::vector<WindowSize> getFullscreenSizes(int displayindex) const;
 
-	int getWidth() const;
-	int getHeight() const;
-
 	void getDesktopDimensions(int displayindex, int &width, int &height) const;
 
 	bool isCreated() const;

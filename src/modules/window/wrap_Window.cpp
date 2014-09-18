@@ -92,8 +92,8 @@ int w_setMode(lua_State *L)
 	}
 	else
 	{
-		// Default to "normal" fullscreen.
-		settings.fstype = Window::FULLSCREEN_TYPE_NORMAL;
+		// Default to exclusive fullscreen mode.
+		settings.fstype = Window::FULLSCREEN_TYPE_EXCLUSIVE;
 	}
 	lua_pop(L, 1);
 
@@ -110,10 +110,6 @@ int w_setMode(lua_State *L)
 	settings.sRGB = luax_boolflag(L, 3, settingName(Window::SETTING_SRGB), false);
 
 	// We don't explicitly set the refresh rate, it's "read-only".
-
-	// For backward-compatibility. TODO: remove!
-	int fsaa = luax_intflag(L, 3, settingName(Window::SETTING_FSAA), 0);
-	if (fsaa > settings.msaa) settings.msaa = fsaa;
 
 	luax_catchexcept(L,
 		[&](){ luax_pushboolean(L, instance()->setWindow(w, h, &settings)); }
@@ -132,7 +128,7 @@ int w_getMode(lua_State *L)
 
 	lua_newtable(L);
 
-	const char *fstypestr = "normal";
+	const char *fstypestr = "exclusive";
 	Window::getConstant(settings.fstype, fstypestr);
 
 	lua_pushstring(L, fstypestr);
@@ -146,9 +142,6 @@ int w_getMode(lua_State *L)
 
 	lua_pushinteger(L, settings.msaa);
 	lua_setfield(L, -2, settingName(Window::SETTING_MSAA));
-
-	lua_pushinteger(L, settings.msaa);
-	lua_setfield(L, -2, settingName(Window::SETTING_FSAA)); // For backward-compatibility. TODO: remove!
 
 	luax_pushboolean(L, settings.resizable);
 	lua_setfield(L, -2, settingName(Window::SETTING_RESIZABLE));
@@ -248,25 +241,6 @@ int w_isCreated(lua_State *L)
 {
 	luax_pushboolean(L, instance()->isCreated());
 	return 1;
-}
-
-int w_getWidth(lua_State *L)
-{
-	lua_pushinteger(L, instance()->getWidth());
-	return 1;
-}
-
-int w_getHeight(lua_State *L)
-{
-	lua_pushinteger(L, instance()->getHeight());
-	return 1;
-}
-
-int w_getDimensions(lua_State *L)
-{
-	lua_pushinteger(L, instance()->getWidth());
-	lua_pushinteger(L, instance()->getHeight());
-	return 2;
 }
 
 int w_getDesktopDimensions(lua_State *L)
@@ -451,9 +425,6 @@ static const luaL_Reg functions[] =
 	{ "setFullscreen", w_setFullscreen },
 	{ "getFullscreen", w_getFullscreen },
 	{ "isCreated", w_isCreated },
-	{ "getWidth", w_getWidth },
-	{ "getHeight", w_getHeight },
-	{ "getDimensions", w_getDimensions },
 	{ "getDesktopDimensions", w_getDesktopDimensions },
 	{ "setIcon", w_setIcon },
 	{ "getIcon", w_getIcon },
