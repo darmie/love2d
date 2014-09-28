@@ -49,7 +49,6 @@ public:
 		SETTING_FULLSCREEN,
 		SETTING_FULLSCREEN_TYPE,
 		SETTING_VSYNC,
-		SETTING_FSAA, // For backward-compatibility. TODO: remove!
 		SETTING_MSAA,
 		SETTING_RESIZABLE,
 		SETTING_MIN_WIDTH,
@@ -67,7 +66,7 @@ public:
 
 	enum FullscreenType
 	{
-		FULLSCREEN_TYPE_NORMAL,
+		FULLSCREEN_TYPE_EXCLUSIVE,
 		FULLSCREEN_TYPE_DESKTOP,
 		FULLSCREEN_TYPE_MAX_ENUM
 	};
@@ -123,9 +122,6 @@ public:
 	virtual const char *getDisplayName(int displayindex) const = 0;
 
 	virtual std::vector<WindowSize> getFullscreenSizes(int displayindex) const = 0;
-
-	virtual int getWidth() const = 0;
-	virtual int getHeight() const = 0;
 
 	virtual void getDesktopDimensions(int displayindex, int &width, int &height) const = 0;
 
@@ -200,26 +196,23 @@ private:
 
 struct WindowSettings
 {
-	WindowSettings();
-
-	bool fullscreen; // = false
-	Window::FullscreenType fstype; // = FULLSCREEN_TYPE_NORMAL
-	bool vsync; // = true
-	int msaa; // = 0
-	bool resizable; // = false
-	int minwidth; // = 1
-	int minheight; // = 1
-	bool borderless; // = false
-	bool centered; // = true
-	int display; // = 0
-	bool highdpi; // false
-	bool sRGB; // false
-	double refreshrate; // 0.0
-	bool useposition; // false
-	int x; // 0
-	int y; // 0
-
-}; // WindowSettings
+	bool fullscreen = false;
+	Window::FullscreenType fstype = Window::FULLSCREEN_TYPE_EXCLUSIVE;
+	bool vsync = true;
+	int msaa = 0;
+	bool resizable = false;
+	int minwidth = 1;
+	int minheight = 1;
+	bool borderless = false;
+	bool centered = true;
+	int display = 0;
+	bool highdpi = false;
+	bool sRGB = false;
+	double refreshrate = 0.0;
+	bool useposition = false;
+	int x = 0;
+	int y = 0;
+};
 
 } // window
 } // love

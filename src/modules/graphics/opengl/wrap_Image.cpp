@@ -48,9 +48,7 @@ int w_Image_setMipmapFilter(lua_State *L)
 	}
 
 	luax_catchexcept(L, [&](){ t->setFilter(f); });
-
-	float sharpness = (float) luaL_optnumber(L, 3, 0);
-	t->setMipmapSharpness(sharpness);
+	t->setMipmapSharpness((float) luaL_optnumber(L, 3, 0.0));
 
 	return 0;
 }
@@ -81,7 +79,13 @@ int w_Image_isCompressed(lua_State *L)
 int w_Image_refresh(lua_State *L)
 {
 	Image *i = luax_checkimage(L, 1);
-	luax_catchexcept(L, [&](){ i->refresh(); });
+
+	int xoffset = luaL_optint(L, 2, 0);
+	int yoffset = luaL_optint(L, 3, 0);
+	int w = luaL_optint(L, 4, i->getWidth());
+	int h = luaL_optint(L, 5, i->getHeight());
+
+	luax_catchexcept(L, [&](){ i->refresh(xoffset, yoffset, w, h); });
 	return 0;
 }
 

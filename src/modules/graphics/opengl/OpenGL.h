@@ -21,12 +21,13 @@
 #ifndef LOVE_GRAPHICS_OPENGL_OPENGL_H
 #define LOVE_GRAPHICS_OPENGL_OPENGL_H
 
-#include "GLee.h"
-
 // LOVE
 #include "graphics/Color.h"
 #include "graphics/Texture.h"
 #include "common/Matrix.h"
+
+// GLAD
+#include "libraries/glad/gladfuncs.hpp"
 
 // C++
 #include <vector>
@@ -41,6 +42,22 @@ namespace graphics
 {
 namespace opengl
 {
+
+// Awful, but the library uses the namespace in order to use the functions sanely
+// with proper autocomplete in IDEs while having name mangling safety -
+// no clashes with other GL libraries when linking, etc.
+using namespace glad;
+
+// Vertex attribute indices used in shaders by LOVE. The values map to OpenGL
+// generic vertex attribute indices.
+enum VertexAttribID
+{
+	ATTRIB_POS = 0,
+	ATTRIB_TEXCOORD,
+	ATTRIB_COLOR,
+	ATTRIB_PSEUDO_INSTANCE_ID, // Instance ID used with pseudo-instancing.
+	ATTRIB_MAX_ENUM
+};
 
 /**
  * Thin layer between OpenGL and the rest of the program.
@@ -63,17 +80,6 @@ public:
 		VENDOR_APPLE,     // Software renderer.
 		VENDOR_MICROSOFT, // Software renderer.
 		VENDOR_UNKNOWN
-	};
-
-	// Vertex attributes used in shaders by LOVE. The values map to OpenGL
-	// generic vertex attribute indices, when applicable.
-	// LOVE uses the old hard-coded attribute APIs for positions, colors, etc.
-	// (for now.)
-	enum VertexAttrib
-	{
-		// Instance ID when pseudo-instancing is used.
-		ATTRIB_PSEUDO_INSTANCE_ID = 1,
-		ATTRIB_MAX_ENUM
 	};
 
 	// A rectangle representing an OpenGL viewport or a scissor box.
@@ -142,10 +148,15 @@ public:
 	OpenGL();
 
 	/**
-	 * Initializes some required context state based on current and default
-	 * OpenGL state. Call this directly after creating an OpenGL context!
+	 * Initializes the active OpenGL context.
 	 **/
-	void initContext();
+	bool initContext();
+
+	/**
+	 * Sets up some required context state based on current and default OpenGL
+	 * state. Call this directly after initializing an OpenGL context!
+	 **/
+	void setupContext();
 
 	/**
 	 * Marks current context state as invalid and deletes OpenGL objects owned
@@ -260,9 +271,10 @@ public:
 
 	/**
 	 * Sets the texture filter mode for the currently bound texture.
-	 * Returns the actual amount of anisotropic filtering set.
+	 * The anisotropy parameter of the argument is set to the actual amount of
+	 * anisotropy that was used.
 	 **/
-	float setTextureFilter(graphics::Texture::Filter &f);
+	void setTextureFilter(graphics::Texture::Filter &f);
 
 	/**
 	 * Sets the texture wrap mode for the currently bound texture.
