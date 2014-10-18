@@ -55,9 +55,6 @@ public:
 
 	std::vector<WindowSize> getFullscreenSizes(int displayindex) const;
 
-	int getWidth() const;
-	int getHeight() const;
-
 	void getDesktopDimensions(int displayindex, int &width, int &height) const;
 
 	void setPosition(int x, int y, int displayindex);
@@ -117,10 +114,8 @@ private:
 
 	struct _currentMode
 	{
-		_currentMode();
-
-		int width;
-		int height;
+		int width  = 800;
+		int height = 600;
 		WindowSettings settings;
 		Object::StrongRef<love::image::ImageData> icon;
 

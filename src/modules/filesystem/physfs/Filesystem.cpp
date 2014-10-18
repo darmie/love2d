@@ -77,6 +77,7 @@ Filesystem::Filesystem()
 	, fused(false)
 	, fusedSet(false)
 {
+	requirePath = {"?.lua", "?/init.lua"};
 }
 
 Filesystem::~Filesystem()
@@ -443,19 +444,14 @@ std::string Filesystem::getRealDirectory(const char *filename) const
 	return std::string(dir);
 }
 
-bool Filesystem::exists(const char *file) const
+bool Filesystem::isDirectory(const char *dir) const
 {
-	return PHYSFS_exists(file);
-}
-
-bool Filesystem::isDirectory(const char *file) const
-{
-	return PHYSFS_isDirectory(file);
+	return PHYSFS_isDirectory(dir);
 }
 
 bool Filesystem::isFile(const char *file) const
 {
-	return exists(file) && !isDirectory(file);
+	return PHYSFS_exists(file) && !PHYSFS_isDirectory(file);
 }
 
 bool Filesystem::createDirectory(const char *dir)
@@ -478,7 +474,7 @@ bool Filesystem::remove(const char *file)
 	return true;
 }
 
-Data *Filesystem::read(const char *filename, int64 size) const
+FileData *Filesystem::read(const char *filename, int64 size) const
 {
 	File file(filename);
 
@@ -674,6 +670,11 @@ bool Filesystem::areSymlinksEnabled() const
 bool Filesystem::isSymlink(const char *filename) const
 {
 	return PHYSFS_isSymbolicLink(filename) != 0;
+}
+
+std::vector<std::string> &Filesystem::getRequirePath()
+{
+	return requirePath;
 }
 
 } // physfs

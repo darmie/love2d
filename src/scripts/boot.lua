@@ -172,6 +172,9 @@ function love.createhandlers()
 		mousereleased = function (x,y,b)
 			if love.mousereleased then return love.mousereleased(x,y,b) end
 		end,
+		wheelmoved = function (x,y)
+			if love.wheelmoved then return love.wheelmoved(x,y) end
+		end,
 		joystickpressed = function (j,b)
 			if love.joystickpressed then return love.joystickpressed(j,b) end
 		end,
@@ -305,11 +308,10 @@ function love.init()
 			minwidth = 1,
 			minheight = 1,
 			fullscreen = false,
-			fullscreentype = "normal",
+			fullscreentype = "exclusive",
 			display = 1,
 			vsync = true,
 			msaa = 0,
-			fsaa = 0, -- For backward-compatibility. TODO: remove!
 			borderless = false,
 			resizable = false,
 			centered = true,
@@ -399,7 +401,6 @@ function love.init()
 			fullscreen = c.window.fullscreen,
 			fullscreentype = c.window.fullscreentype,
 			vsync = c.window.vsync,
-			fsaa = c.window.fsaa, -- For backward-compatibility. TODO: remove!
 			msaa = c.window.msaa,
 			resizable = c.window.resizable,
 			minwidth = c.window.minwidth,
@@ -478,7 +479,6 @@ function love.run()
 
 	if love.math then
 		love.math.setRandomSeed(os.time())
-		for i=1,3 do love.math.random() end
 	end
 
 	if love.event then
@@ -1342,13 +1342,7 @@ function love.nogame()
 	local create_rain
 
 	function love.load()
-		-- Subtractive blending isn't supported on some ancient systems, so
-		-- we should make sure it still looks decent in that case.
-		if love.graphics.isSupported("subtractive") then
-			love.graphics.setBackgroundColor(137, 194, 218)
-		else
-			love.graphics.setBackgroundColor(11, 88, 123)
-		end
+		love.graphics.setBackgroundColor(137, 194, 218)
 
 		local win_w = love.graphics.getWidth()
 		local win_h = love.graphics.getHeight()
@@ -1407,8 +1401,6 @@ function love.nogame()
 			batch:setBufferSize(batch_w * batch_h)
 		end
 
-		batch:bind()
-
 		for i = 0, batch_h - 1 do
 			for j = 0, batch_w - 1 do
 				local is_even = (j % 2) == 0
@@ -1419,7 +1411,7 @@ function love.nogame()
 			end
 		end
 
-		batch:unbind()
+		batch:flush()
 	end
 
 	local function update_rain(t)		
@@ -1439,18 +1431,12 @@ function love.nogame()
 	end
 
 	local function draw_grid()
-		local blendmode = "subtractive"
-		if not love.graphics.isSupported("subtractive") then
-			-- We also change the background color in this case, so it looks OK.
-			blendmode = "additive"
-		end
-
 		local y = rain.spacing_y * rain.t
 
 		local small_y = -rain.spacing_y + y / 2
 		local big_y = -rain.spacing_y + y
 
-		love.graphics.setBlendMode(blendmode)
+		love.graphics.setBlendMode("subtract")
 		love.graphics.setColor(255, 255, 255, 128)
 		love.graphics.draw(rain.batch, -rain.spacing_x, small_y, 0, 0.5, 0.5)
 
@@ -1479,7 +1465,7 @@ function love.nogame()
 		love.graphics.draw(background.image, bx, by, 0, 0.7, 0.7, 256, 256)
 		love.graphics.setColor(255, 255, 255, 32 + 16*intensity)
 		love.graphics.draw(background.image, bx, by, 0, 0.65, 0.65, 256, 256)
-		love.graphics.setBlendMode("additive")
+		love.graphics.setBlendMode("add")
 		love.graphics.setColor(255, 255, 255, 16 + 16*intensity)
 		love.graphics.draw(background.image, bx, by, 0, 0.6, 0.6, 256, 256)
 	end
