@@ -57,18 +57,16 @@ public:
 
 	struct Filter
 	{
-		Filter();
-		FilterMode min;
-		FilterMode mag;
-		FilterMode mipmap;
-		float anisotropy;
+		FilterMode min    = FILTER_LINEAR;
+		FilterMode mag    = FILTER_LINEAR;
+		FilterMode mipmap = FILTER_NONE;
+		float anisotropy  = 1.0f;
 	};
 
 	struct Wrap
 	{
-		Wrap();
-		WrapMode s;
-		WrapMode t;
+		WrapMode s = WRAP_CLAMP;
+		WrapMode t = WRAP_CLAMP;
 	};
 
 	Texture();
@@ -104,6 +102,8 @@ public:
 	// The default filter.
 	static void setDefaultFilter(const Filter &f);
 	static const Filter &getDefaultFilter();
+
+	static bool validateFilter(const Filter &f, bool mipmapsAllowed);
 
 	static bool getConstant(const char *in, FilterMode &out);
 	static bool getConstant(FilterMode in, const char  *&out);

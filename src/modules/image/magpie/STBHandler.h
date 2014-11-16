@@ -18,26 +18,44 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_FONT_FREETYPE_WRAP_FONT_H
-#define LOVE_FONT_FREETYPE_WRAP_FONT_H
+#ifndef LOVE_IMAGE_MAGPIE_STB_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_STB_HANDLER_H
 
-// LOVE
-#include "common/config.h"
-#include "common/runtime.h"
+#include "FormatHandler.h"
 
 namespace love
 {
-namespace font
+namespace image
 {
-namespace freetype
+namespace magpie
 {
 
-int w_newRasterizer(lua_State *L);
-int w_newGlyphData(lua_State *L);
-extern "C" LOVE_EXPORT int luaopen_love_font(lua_State *L);
+/**
+ * Interface between ImageData and the stb_image library, for decoding TGA and
+ * BMP images.
+ *
+ * We could use stb_image to decode PNG and JPEG as well, but performance and
+ * comprehensive format support is lacking compared to some alternatives, plus
+ * stb_image_write doesn't have JPEG support.
+ **/
+class STBHandler : public FormatHandler
+{
+public:
 
-} // freetype
-} // font
+	// Implements FormatHandler.
+
+	virtual bool canDecode(love::filesystem::FileData *data);
+	virtual bool canEncode(ImageData::Format format);
+
+	virtual DecodedImage decode(love::filesystem::FileData *data);
+	virtual EncodedImage encode(const DecodedImage &img, ImageData::Format format);
+
+	virtual void free(unsigned char *mem);
+
+}; // STBHandler
+
+} // magpie
+} // image
 } // love
 
-#endif // LOVE_FONT_FREETYPE_WRAP_FONT_H
+#endif // LOVE_IMAGE_MAGPIE_STB_HANDLER_H

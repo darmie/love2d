@@ -186,10 +186,16 @@ source_group("modules\\event\\sdl" FILES ${LOVE_SRC_MODULE_EVENT_SDL})
 #
 
 set(LOVE_SRC_MODULE_FILESYSTEM_ROOT
+	src/modules/filesystem/DroppedFile.cpp
+	src/modules/filesystem/DroppedFile.h
 	src/modules/filesystem/File.cpp
 	src/modules/filesystem/File.h
 	src/modules/filesystem/FileData.cpp
 	src/modules/filesystem/FileData.h
+	src/modules/filesystem/Filesystem.cpp
+	src/modules/filesystem/Filesystem.h
+	src/modules/filesystem/wrap_DroppedFile.cpp
+	src/modules/filesystem/wrap_DroppedFile.h
 	src/modules/filesystem/wrap_File.cpp
 	src/modules/filesystem/wrap_File.h
 	src/modules/filesystem/wrap_FileData.cpp
@@ -218,6 +224,8 @@ source_group("modules\\filesystem\\physfs" FILES ${LOVE_SRC_MODULE_FILESYSTEM_PH
 #
 
 set(LOVE_SRC_MODULE_FONT_ROOT
+	src/modules/font/BMFontRasterizer.cpp
+	src/modules/font/BMFontRasterizer.h
 	src/modules/font/Font.h
 	src/modules/font/GlyphData.cpp
 	src/modules/font/GlyphData.h
@@ -225,6 +233,8 @@ set(LOVE_SRC_MODULE_FONT_ROOT
 	src/modules/font/ImageRasterizer.h
 	src/modules/font/Rasterizer.cpp
 	src/modules/font/Rasterizer.h
+	src/modules/font/wrap_Font.cpp
+	src/modules/font/wrap_Font.h
 	src/modules/font/wrap_GlyphData.cpp
 	src/modules/font/wrap_GlyphData.h
 	src/modules/font/wrap_Rasterizer.cpp
@@ -236,8 +246,6 @@ set(LOVE_SRC_MODULE_FONT_FREETYPE
 	src/modules/font/freetype/Font.h
 	src/modules/font/freetype/TrueTypeRasterizer.cpp
 	src/modules/font/freetype/TrueTypeRasterizer.h
-	src/modules/font/freetype/wrap_Font.cpp
-	src/modules/font/freetype/wrap_Font.h
 )
 
 set(LOVE_SRC_MODULE_FONT
@@ -270,8 +278,6 @@ set(LOVE_SRC_MODULE_GRAPHICS_OPENGL
 	src/modules/graphics/opengl/Canvas.h
 	src/modules/graphics/opengl/Font.cpp
 	src/modules/graphics/opengl/Font.h
-	src/modules/graphics/opengl/GLee.c
-	src/modules/graphics/opengl/GLee.h
 	src/modules/graphics/opengl/Graphics.cpp
 	src/modules/graphics/opengl/Graphics.h
 	src/modules/graphics/opengl/Image.cpp
@@ -344,14 +350,18 @@ set(LOVE_SRC_MODULE_IMAGE_MAGPIE
 	src/modules/image/magpie/CompressedData.h
 	src/modules/image/magpie/ddsHandler.cpp
 	src/modules/image/magpie/ddsHandler.h
-	src/modules/image/magpie/DevilHandler.cpp
-	src/modules/image/magpie/DevilHandler.h
 	src/modules/image/magpie/FormatHandler.cpp
 	src/modules/image/magpie/FormatHandler.h
 	src/modules/image/magpie/Image.cpp
 	src/modules/image/magpie/Image.h
 	src/modules/image/magpie/ImageData.cpp
 	src/modules/image/magpie/ImageData.h
+	src/modules/image/magpie/JPEGHandler.cpp
+	src/modules/image/magpie/JPEGHandler.h
+	src/modules/image/magpie/PNGHandler.cpp
+	src/modules/image/magpie/PNGHandler.h
+	src/modules/image/magpie/STBHandler.cpp
+	src/modules/image/magpie/STBHandler.h
 )
 
 set(LOVE_SRC_MODULE_IMAGE
@@ -940,6 +950,29 @@ target_link_libraries(love_3p_enet ${MEGA_LUA})
 target_include_directories(love_3p_enet PUBLIC src/libraries/enet/libenet/include)
 
 #
+# GLAD
+#
+
+set(LOVE_SRC_3P_GLAD
+	src/libraries/glad/glad.cpp
+	src/libraries/glad/glad.hpp
+	src/libraries/glad/gladfuncs.hpp
+)
+
+add_library(love_3p_glad ${LOVE_SRC_3P_GLAD})
+
+#
+# LodePNG
+#
+
+set(LOVE_SRC_3P_LODEPNG
+	src/libraries/lodepng/lodepng.cpp
+	src/libraries/lodepng/lodepng.h
+)
+
+add_library(love_3p_lodepng ${LOVE_SRC_3P_LODEPNG})
+
+#
 # luasocket
 #
 
@@ -1013,6 +1046,16 @@ set(LOVE_SRC_3P_NOISE1234
 add_library(love_3p_noise1234 ${LOVE_SRC_3P_NOISE1234})
 
 #
+# stb_image
+#
+
+set(LOVE_SRC_3P_STB
+	src/libraries/stb/stb_image.h
+)
+
+# stb_image has no implementation files of its own.
+
+#
 # utf8
 #
 
@@ -1053,6 +1096,8 @@ set(LOVE_3P
 	love_3p_box2d
 	love_3p_ddsparse
 	love_3p_enet
+	love_3p_glad
+	love_3p_lodepng
 	love_3p_luasocket
 	love_3p_noise1234
 	love_3p_wuff
@@ -1097,12 +1142,9 @@ include_directories(
 link_directories(${SDL_LINK_DIR})
 
 set(LOVE_MEGA_3P
-	${MEGA_DEVIL}
 	${MEGA_FREETYPE}
-	${MEGA_JASPER}
-	${MEGA_JPEG}
+	${MEGA_JPEG_TURBO}
 	${MEGA_LIBOGG}
-	${MEGA_LIBPNG}
 	${MEGA_LIBVORBISFILE}
 	${MEGA_LIBVORBIS}
 	${MEGA_LUA}
@@ -1111,7 +1153,6 @@ set(LOVE_MEGA_3P
 	${MEGA_PHYSFS}
 	${MEGA_SDL2MAIN}
 	${MEGA_SDL2}
-	${MEGA_TIFF}
 	${MEGA_ZLIB}
 )
 
@@ -1168,7 +1209,6 @@ endif()
 
 add_move_dll(love ${MEGA_SDL2})
 add_move_dll(love ${MEGA_OPENAL})
-add_move_dll(love ${MEGA_DEVIL})
 
 if(LOVE_JIT)
 	add_move_file(love ${MEGA_LUAJIT_DLL})

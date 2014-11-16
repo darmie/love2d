@@ -46,9 +46,6 @@ class Shader : public Object, public Volatile
 {
 public:
 
-	// Pointer to currently active Shader.
-	static Shader *current;
-
 	enum ShaderStage
 	{
 		STAGE_VERTEX,
@@ -79,6 +76,15 @@ public:
 		std::string vertex;
 		std::string pixel;
 	};
+
+	// Pointer to currently active Shader.
+	static Shader *current;
+
+	// Pointer to the default Shader.
+	static Shader *defaultShader;
+
+	// Default shader code (a shader is always required internally.)
+	static ShaderSource defaultCode[1]; // TODO: RENDERER_MAX_ENUM
 
 	/**
 	 * Creates a new Shader using a list of source codes.
@@ -165,7 +171,7 @@ public:
 	/**
 	 * Internal use only.
 	 **/
-	bool hasVertexAttrib(OpenGL::VertexAttrib attrib) const;
+	bool hasVertexAttrib(VertexAttribID attrib) const;
 	bool hasBuiltinUniform(BuiltinUniform builtin) const;
 	bool sendBuiltinFloat(BuiltinUniform builtin, int size, const GLfloat *m, int count);
 	void checkSetScreenParams();
@@ -221,7 +227,7 @@ private:
 	GLint builtinUniforms[BUILTIN_MAX_ENUM];
 
 	// Location values for any generic vertex attribute variables.
-	GLint builtinAttributes[OpenGL::ATTRIB_MAX_ENUM];
+	GLint builtinAttributes[ATTRIB_MAX_ENUM];
 
 	// Uniform location buffer map
 	std::map<std::string, Uniform> uniforms;
@@ -250,8 +256,8 @@ private:
 	static StringMap<UniformType, UNIFORM_MAX_ENUM> uniformTypes;
 
 	// Names for the generic vertex attributes used by love.
-	static StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM>::Entry attribNameEntries[];
-	static StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM> attribNames;
+	static StringMap<VertexAttribID, ATTRIB_MAX_ENUM>::Entry attribNameEntries[];
+	static StringMap<VertexAttribID, ATTRIB_MAX_ENUM> attribNames;
 
 	// Names for the built-in uniform variables.
 	static StringMap<BuiltinUniform, BUILTIN_MAX_ENUM>::Entry builtinNameEntries[];

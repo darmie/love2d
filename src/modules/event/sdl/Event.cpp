@@ -20,6 +20,8 @@
 
 #include "Event.h"
 
+#include "filesystem/DroppedFile.h"
+#include "filesystem/Filesystem.h"
 #include "keyboard/Keyboard.h"
 #include "mouse/Mouse.h"
 #include "joystick/JoystickModule.h"
@@ -108,7 +110,8 @@ Message *Event::convert(const SDL_Event &e) const
 {
 	Message *msg = NULL;
 
-	love::keyboard::Keyboard *kb = 0;
+	love::keyboard::Keyboard *kb = nullptr;
+	love::filesystem::Filesystem *filesystem = nullptr;
 
 	love::keyboard::Keyboard::Key key;
 	love::mouse::Mouse::Button button;
@@ -188,24 +191,11 @@ Message *Event::convert(const SDL_Event &e) const
 		}
 		break;
 	case SDL_MOUSEWHEEL:
-		if (e.wheel.y != 0)
-		{
-			button = (e.wheel.y > 0) ? mouse::Mouse::BUTTON_WHEELUP : mouse::Mouse::BUTTON_WHEELDOWN;
-			if (!love::mouse::Mouse::getConstant(button, txt))
-				break;
-
-			int mx, my;
-			SDL_GetMouseState(&mx, &my);
-			windowToPixelCoords(&mx, &my);
-
-			arg1 = new Variant((double) mx);
-			arg2 = new Variant((double) my);
-			arg3 = new Variant(txt, strlen(txt));
-			msg = new Message("mousepressed", arg1, arg2, arg3);
-			arg1->release();
-			arg2->release();
-			arg3->release();
-		}
+		arg1 = new Variant((double) e.wheel.x);
+		arg2 = new Variant((double) e.wheel.y);
+		msg = new Message("wheelmoved", arg1, arg2);
+		arg1->release();
+		arg2->release();
 		break;
 	case SDL_JOYBUTTONDOWN:
 	case SDL_JOYBUTTONUP:
@@ -223,6 +213,29 @@ Message *Event::convert(const SDL_Event &e) const
 		msg = convertWindowEvent(e);
 		break;
 	case SDL_DROPFILE:
+		filesystem = Module::getInstance<filesystem::Filesystem>(Module::M_FILESYSTEM);
+		if (filesystem != nullptr)
+		{
+			// Allow mounting any dropped path, so zips or dirs can be mounted.
+			filesystem->allowMountingForPath(e.drop.file);
+
+			if (filesystem->isRealDirectory(e.drop.file))
+			{
+				arg1 = new Variant(e.drop.file, strlen(e.drop.file));
+				msg = new Message("directorydropped", arg1);
+				arg1->release();
+			}
+			else
+			{
+				Proxy proxy;
+				proxy.data = new love::filesystem::DroppedFile(e.drop.file);
+				proxy.flags = FILESYSTEM_DROPPED_FILE_T;
+				arg1 = new Variant(FILESYSTEM_DROPPED_FILE_ID, &proxy);
+				msg = new Message("filedropped", arg1);
+				arg1->release();
+				((Object *) proxy.data)->release();
+			}
+		}
 		SDL_free(e.drop.file);
 		break;
 	case SDL_QUIT:

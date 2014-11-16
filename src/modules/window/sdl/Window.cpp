@@ -57,14 +57,6 @@ Window::~Window()
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
-Window::_currentMode::_currentMode()
-	: width(800)
-	, height(600)
-	, settings()
-	, icon(0)
-{
-}
-
 bool Window::setWindow(int width, int height, WindowSettings *settings)
 {
 	WindowSettings f;
@@ -369,7 +361,7 @@ void Window::updateSettings(const WindowSettings &newsettings)
 	else if ((wflags & SDL_WINDOW_FULLSCREEN) == SDL_WINDOW_FULLSCREEN)
 	{
 		curMode.settings.fullscreen = true;
-		curMode.settings.fstype = FULLSCREEN_TYPE_NORMAL;
+		curMode.settings.fstype = FULLSCREEN_TYPE_EXCLUSIVE;
 	}
 	else
 	{
@@ -400,7 +392,7 @@ void Window::updateSettings(const WindowSettings &newsettings)
 
 	// Only minimize on focus loss if the window is in exclusive-fullscreen
 	// mode.
-	if (curMode.settings.fullscreen && curMode.settings.fstype == FULLSCREEN_TYPE_NORMAL)
+	if (curMode.settings.fullscreen && curMode.settings.fstype == FULLSCREEN_TYPE_EXCLUSIVE)
 		SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "1");
 	else
 		SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
@@ -519,16 +511,6 @@ std::vector<WindowSize> Window::getFullscreenSizes(int displayindex) const
 	}
 
 	return sizes;
-}
-
-int Window::getWidth() const
-{
-	return curMode.width;
-}
-
-int Window::getHeight() const
-{
-	return curMode.height;
 }
 
 void Window::getDesktopDimensions(int displayindex, int &width, int &height) const
