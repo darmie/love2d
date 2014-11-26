@@ -183,6 +183,43 @@ vector<Vector> BezierCurve::render(size_t accuracy) const
 	return vertices;
 }
 
+vector<Vector> BezierCurve::renderSegment(double start, double end, size_t accuracy) const
+{
+	if (controlPoints.size() < 2)
+		throw Exception("Invalid Bezier curve: Not enough control points.");
+	vector<Vector> vertices(controlPoints);
+	subdivide(vertices, accuracy);
+	if (start == end)
+	{
+		vertices.clear();
+	}
+	else if (start < end)
+	{
+		if (start > 0 && start < 1)
+		{
+			for (size_t i = 0; i < vertices.size(); ++i)
+			{
+				if ((double)i / vertices.size() > start)
+				{
+					vertices.erase(vertices.begin(), vertices.begin() + i - 1);
+					break;
+				}
+			}
+		}
+		if (end < 1 && end > 0)
+		{
+			for (size_t i = vertices.size(); i > 0; --i)
+			{
+				if ((double)(i - 1) / vertices.size() < end)
+				{
+					vertices.erase(vertices.begin() + i, vertices.end());
+					break;
+				}
+			}
+		}
+	}
+	return vertices;
+}
 
 } // namespace math
 } // namespace love
