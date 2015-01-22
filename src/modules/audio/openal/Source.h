@@ -105,7 +105,6 @@ public:
 	virtual bool isRelative() const;
 	void setLooping(bool looping);
 	bool isLooping() const;
-	bool isStatic() const;
 	virtual void setMinVolume(float volume);
 	virtual float getMinVolume() const;
 	virtual void setMaxVolume(float volume);
@@ -166,15 +165,9 @@ private:
 
 	struct Cone
 	{
-		int innerAngle; // degrees
-		int outerAngle; // degrees
-		float outerVolume;
-
-		Cone()
-			: innerAngle(360)
-			, outerAngle(360)
-			, outerVolume(0.0f)
-		{}
+		int innerAngle = 360; // degrees
+		int outerAngle = 360; // degrees
+		float outerVolume = 0.0f;
 	} cone;
 
 	float offsetSamples;
