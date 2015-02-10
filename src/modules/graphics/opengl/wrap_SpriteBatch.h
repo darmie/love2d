@@ -37,7 +37,6 @@ int w_SpriteBatch_addg(lua_State *L);
 int w_SpriteBatch_set(lua_State *L);
 int w_SpriteBatch_setg(lua_State *L);
 int w_SpriteBatch_clear(lua_State *L);
-int w_SpriteBatch_bind(lua_State *L);
 int w_SpriteBatch_flush(lua_State *L);
 int w_SpriteBatch_setTexture(lua_State *L);
 int w_SpriteBatch_getTexture(lua_State *L);

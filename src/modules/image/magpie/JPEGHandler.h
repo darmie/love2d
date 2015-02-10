@@ -18,13 +18,19 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
-#define LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
+#ifndef LOVE_IMAGE_MAGPIE_JPEG_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_JPEG_HANDLER_H
 
 // LOVE
-#include "filesystem/FileData.h"
 #include "FormatHandler.h"
 #include "thread/threads.h"
+
+// libjpeg-turbo
+#ifdef LOVE_MACOSX_USE_FRAMEWORKS
+#include <jpeg-turbo/turbojpeg.h>
+#else
+#include <turbojpeg.h>
+#endif
 
 namespace love
 {
@@ -34,16 +40,16 @@ namespace magpie
 {
 
 /**
- * Interface between ImageData and DevIL.
+ * Interface between ImageData and TurboJPEG.
  **/
-class DevilHandler : public FormatHandler
+class JPEGHandler : public FormatHandler
 {
 public:
 
 	// Implements FormatHandler.
 
-	DevilHandler();
-	virtual ~DevilHandler();
+	JPEGHandler();
+	virtual ~JPEGHandler();
 
 	virtual bool canDecode(love::filesystem::FileData *data);
 	virtual bool canEncode(ImageData::Format format);
@@ -55,10 +61,15 @@ private:
 
 	Mutex *mutex;
 
-}; // DevilHandler
+	tjhandle decompressor;
+	tjhandle compressor;
+
+	static const int COMPRESS_QUALITY = 90;
+
+}; // JPEGHandler
 
 } // magpie
 } // image
 } // love
 
-#endif // LOVE_IMAGE_MAGPIE_DEVIL_HANDLER_H
+#endif // LOVE_IMAGE_MAGPIE_JPEG_HANDLER_H

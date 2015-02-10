@@ -24,6 +24,7 @@
 // LOVE
 #include "common/Object.h"
 #include "common/StringMap.h"
+#include "graphics/Graphics.h"
 #include "OpenGL.h"
 #include "Texture.h"
 
@@ -46,9 +47,6 @@ class Shader : public Object, public Volatile
 {
 public:
 
-	// Pointer to currently active Shader.
-	static Shader *current;
-
 	enum ShaderStage
 	{
 		STAGE_VERTEX,
@@ -59,6 +57,10 @@ public:
 	// Built-in uniform (extern) variables.
 	enum BuiltinUniform
 	{
+		BUILTIN_TRANSFORM_MATRIX = 0,
+		BUILTIN_PROJECTION_MATRIX,
+		BUILTIN_TRANSFORM_PROJECTION_MATRIX,
+		BUILTIN_POINT_SIZE,
 		BUILTIN_SCREEN_SIZE,
 		BUILTIN_MAX_ENUM
 	};
@@ -79,6 +81,15 @@ public:
 		std::string vertex;
 		std::string pixel;
 	};
+
+	// Pointer to currently active Shader.
+	static Shader *current;
+
+	// Pointer to the default Shader.
+	static Shader *defaultShader;
+
+	// Default shader code (a shader is always required internally.)
+	static ShaderSource defaultCode[Graphics::RENDERER_MAX_ENUM];
 
 	/**
 	 * Creates a new Shader using a list of source codes.
@@ -165,8 +176,9 @@ public:
 	/**
 	 * Internal use only.
 	 **/
-	bool hasVertexAttrib(OpenGL::VertexAttrib attrib) const;
+	bool hasVertexAttrib(VertexAttribID attrib) const;
 	bool hasBuiltinUniform(BuiltinUniform builtin) const;
+	bool sendBuiltinMatrix(BuiltinUniform builtin, int size, const GLfloat *m, int count);
 	bool sendBuiltinFloat(BuiltinUniform builtin, int size, const GLfloat *m, int count);
 	void checkSetScreenParams();
 
@@ -221,7 +233,7 @@ private:
 	GLint builtinUniforms[BUILTIN_MAX_ENUM];
 
 	// Location values for any generic vertex attribute variables.
-	GLint builtinAttributes[OpenGL::ATTRIB_MAX_ENUM];
+	GLint builtinAttributes[ATTRIB_MAX_ENUM];
 
 	// Uniform location buffer map
 	std::map<std::string, Uniform> uniforms;
@@ -250,8 +262,8 @@ private:
 	static StringMap<UniformType, UNIFORM_MAX_ENUM> uniformTypes;
 
 	// Names for the generic vertex attributes used by love.
-	static StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM>::Entry attribNameEntries[];
-	static StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM> attribNames;
+	static StringMap<VertexAttribID, ATTRIB_MAX_ENUM>::Entry attribNameEntries[];
+	static StringMap<VertexAttribID, ATTRIB_MAX_ENUM> attribNames;
 
 	// Names for the built-in uniform variables.
 	static StringMap<BuiltinUniform, BUILTIN_MAX_ENUM>::Entry builtinNameEntries[];

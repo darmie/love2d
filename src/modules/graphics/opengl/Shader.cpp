@@ -62,6 +62,9 @@ namespace
 
 
 Shader *Shader::current = nullptr;
+Shader *Shader::defaultShader = nullptr;
+
+Shader::ShaderSource Shader::defaultCode[Graphics::RENDERER_MAX_ENUM];
 
 GLint Shader::maxTexUnits = 0;
 std::vector<int> Shader::textureCounters;
@@ -125,9 +128,6 @@ GLuint Shader::compileCode(ShaderStage stage, const std::string &code)
 		throw love::Exception("Cannot create shader object: unknown shader type.");
 		break;
 	}
-
-	// clear existing errors
-	while (glGetError() != GL_NO_ERROR);
 
 	GLuint shaderid = glCreateShader(glstage);
 
@@ -228,13 +228,18 @@ bool Shader::loadVolatile()
 
 	std::vector<GLuint> shaderids;
 
+	const ShaderSource *defaults = &defaultCode[Graphics::RENDERER_OPENGL];
+	if (GLAD_ES_VERSION_2_0)
+		defaults = &defaultCode[Graphics::RENDERER_OPENGLES];
+
+	// The shader program must have both vertex and pixel shader stages.
+	const std::string &vertexcode = shaderSource.vertex.empty() ? defaults->vertex : shaderSource.vertex;
+	const std::string &pixelcode = shaderSource.pixel.empty() ? defaults->pixel : shaderSource.pixel;
+
 	try
 	{
-		if (!shaderSource.vertex.empty())
-			shaderids.push_back(compileCode(STAGE_VERTEX, shaderSource.vertex));
-
-		if (!shaderSource.pixel.empty())
-			shaderids.push_back(compileCode(STAGE_PIXEL, shaderSource.pixel));
+		shaderids.push_back(compileCode(STAGE_VERTEX, vertexcode));
+		shaderids.push_back(compileCode(STAGE_PIXEL, pixelcode));
 	}
 	catch (love::Exception &)
 	{
@@ -242,9 +247,6 @@ bool Shader::loadVolatile()
 			glDeleteShader(id);
 		throw;
 	}
-
-	if (shaderids.empty())
-		throw love::Exception("Cannot create shader: no valid source code!");
 
 	program = glCreateProgram();
 
@@ -259,14 +261,14 @@ bool Shader::loadVolatile()
 		glAttachShader(program, id);
 
 	// Bind generic vertex attribute indices to names in the shader.
-	for (int i = 0; i < int(OpenGL::ATTRIB_MAX_ENUM); i++)
+	for (int i = 0; i < int(ATTRIB_MAX_ENUM); i++)
 	{
-		OpenGL::VertexAttrib attrib = (OpenGL::VertexAttrib) i;
+		VertexAttribID attrib = (VertexAttribID) i;
 
 		// FIXME: We skip this both because pseudo-instancing is temporarily
 		// disabled (see graphics.lua), and because binding a non-existant
 		// attribute name to a location causes a shader linker warning.
-		if (attrib == OpenGL::ATTRIB_PSEUDO_INSTANCE_ID)
+		if (attrib == ATTRIB_PSEUDO_INSTANCE_ID)
 			continue;
 
 		const char *name = nullptr;
@@ -294,10 +296,10 @@ bool Shader::loadVolatile()
 	// Retreive all active uniform variables in this shader from OpenGL.
 	mapActiveUniforms();
 
-	for (int i = 0; i < int(OpenGL::ATTRIB_MAX_ENUM); i++)
+	for (int i = 0; i < int(ATTRIB_MAX_ENUM); i++)
 	{
 		const char *name = nullptr;
-		if (attribNames.find(OpenGL::VertexAttrib(i), name))
+		if (attribNames.find(VertexAttribID(i), name))
 			builtinAttributes[i] = glGetAttribLocation(program, name);
 		else
 			builtinAttributes[i] = -1;
@@ -334,7 +336,7 @@ void Shader::unloadVolatile()
 
 	// active texture list is probably invalid, clear it
 	activeTexUnits.clear();
-	activeTexUnits.insert(activeTexUnits.begin(), maxTexUnits, 0);
+	activeTexUnits.resize(maxTexUnits, 0);
 
 	// same with uniform location list
 	uniforms.clear();
@@ -409,6 +411,14 @@ void Shader::attach(bool temporary)
 
 void Shader::detach()
 {
+	if (defaultShader)
+	{
+		if (current != defaultShader)
+			defaultShader->attach();
+
+		return;
+	}
+
 	if (current != nullptr)
 		glUseProgram(0);
 
@@ -424,72 +434,6 @@ const Shader::Uniform &Shader::getUniform(const std::string &name) const
 		                      "A common error is to define but not use the variable.", name.c_str());
 
 	return it->second;
-}
-
-int Shader::getUniformTypeSize(GLenum type) const
-{
-	switch (type)
-	{
-	case GL_INT:
-	case GL_FLOAT:
-	case GL_BOOL:
-	case GL_SAMPLER_1D:
-	case GL_SAMPLER_2D:
-	case GL_SAMPLER_3D:
-		return 1;
-	case GL_INT_VEC2:
-	case GL_FLOAT_VEC2:
-	case GL_FLOAT_MAT2:
-	case GL_BOOL_VEC2:
-		return 2;
-	case GL_INT_VEC3:
-	case GL_FLOAT_VEC3:
-	case GL_FLOAT_MAT3:
-	case GL_BOOL_VEC3:
-		return 3;
-	case GL_INT_VEC4:
-	case GL_FLOAT_VEC4:
-	case GL_FLOAT_MAT4:
-	case GL_BOOL_VEC4:
-		return 4;
-	default:
-		break;
-	}
-
-	return 1;
-}
-
-Shader::UniformType Shader::getUniformBaseType(GLenum type) const
-{
-	switch (type)
-	{
-	case GL_INT:
-	case GL_INT_VEC2:
-	case GL_INT_VEC3:
-	case GL_INT_VEC4:
-		return UNIFORM_INT;
-	case GL_FLOAT:
-	case GL_FLOAT_VEC2:
-	case GL_FLOAT_VEC3:
-	case GL_FLOAT_VEC4:
-	case GL_FLOAT_MAT2:
-	case GL_FLOAT_MAT3:
-	case GL_FLOAT_MAT4:
-		return UNIFORM_FLOAT;
-	case GL_BOOL:
-	case GL_BOOL_VEC2:
-	case GL_BOOL_VEC3:
-	case GL_BOOL_VEC4:
-		return UNIFORM_BOOL;
-	case GL_SAMPLER_1D:
-	case GL_SAMPLER_2D:
-	case GL_SAMPLER_3D:
-		return UNIFORM_SAMPLER;
-	default:
-		break;
-	}
-
-	return UNIFORM_UNKNOWN;
 }
 
 void Shader::checkSetUniformError(const Uniform &u, int size, int count, UniformType sendtype) const
@@ -621,11 +565,12 @@ void Shader::sendTexture(const std::string &name, Texture *texture)
 
 void Shader::retainObject(const std::string &name, Object *object)
 {
+	object->retain();
+
 	auto it = boundRetainables.find(name);
 	if (it != boundRetainables.end())
 		it->second->release();
 
-	object->retain();
 	boundRetainables[name] = object;
 }
 
@@ -679,7 +624,7 @@ Shader::UniformType Shader::getExternVariable(const std::string &name, int &comp
 	return it->second.baseType;
 }
 
-bool Shader::hasVertexAttrib(OpenGL::VertexAttrib attrib) const
+bool Shader::hasVertexAttrib(VertexAttribID attrib) const
 {
 	return builtinAttributes[int(attrib)] != -1;
 }
@@ -687,6 +632,33 @@ bool Shader::hasVertexAttrib(OpenGL::VertexAttrib attrib) const
 bool Shader::hasBuiltinUniform(BuiltinUniform builtin) const
 {
 	return builtinUniforms[int(builtin)] != -1;
+}
+
+bool Shader::sendBuiltinMatrix(BuiltinUniform builtin, int size, const GLfloat *m, int count)
+{
+	if (!hasBuiltinUniform(builtin))
+		return false;
+
+	GLint location = builtinUniforms[GLint(builtin)];
+
+	TemporaryAttacher attacher(this);
+
+	switch (size)
+	{
+	case 2:
+		glUniformMatrix2fv(location, count, GL_FALSE, m);
+		break;
+	case 3:
+		glUniformMatrix3fv(location, count, GL_FALSE, m);
+		break;
+	case 4:
+		glUniformMatrix4fv(location, count, GL_FALSE, m);
+		break;
+	default:
+		return false;
+	}
+	
+	return true;
 }
 
 bool Shader::sendBuiltinFloat(BuiltinUniform builtin, int size, const GLfloat *vec, int count)
@@ -727,8 +699,8 @@ void Shader::checkSetScreenParams()
 		return;
 
 	// In the shader, we do pixcoord.y = gl_FragCoord.y * params.z + params.w.
-	// This lets us flip pixcoord.y when needed, to be consistent (Canvases
-	// have flipped y-values for pixel coordinates.)
+	// This lets us flip pixcoord.y when needed, to be consistent (drawing with
+	// no Canvas active makes the y-values for pixel coordinates flipped.)
 	GLfloat params[] = {
 		(GLfloat) view.w, (GLfloat) view.h,
 		0.0f, 0.0f,
@@ -736,16 +708,16 @@ void Shader::checkSetScreenParams()
 
 	if (Canvas::current != nullptr)
 	{
-		// gl_FragCoord.y is flipped in Canvases, so we un-flip:
-		// pixcoord.y = gl_FragCoord.y * -1.0 + height.
-		params[2] = -1.0f;
-		params[3] = (GLfloat) view.h;
-	}
-	else
-	{
 		// No flipping: pixcoord.y = gl_FragCoord.y * 1.0 + 0.0.
 		params[2] = 1.0f;
 		params[3] = 0.0f;
+	}
+	else
+	{
+		// gl_FragCoord.y is flipped when drawing to the screen, so we un-flip:
+		// pixcoord.y = gl_FragCoord.y * -1.0 + height.
+		params[2] = -1.0f;
+		params[3] = (GLfloat) view.h;
 	}
 
 	sendBuiltinFloat(BUILTIN_SCREEN_SIZE, 4, params, 1);
@@ -761,11 +733,7 @@ const std::map<std::string, Object *> &Shader::getBoundRetainables() const
 
 std::string Shader::getGLSLVersion()
 {
-	const char *tmp = nullptr;
-
-	// GL_SHADING_LANGUAGE_VERSION isn't available in OpenGL < 2.0.
-	if (GLEE_VERSION_2_0 || GLEE_ARB_shading_language_100)
-		tmp = (const char *) glGetString(GL_SHADING_LANGUAGE_VERSION);
+	const char *tmp = (const char *) glGetString(GL_SHADING_LANGUAGE_VERSION);
 
 	if (tmp == nullptr)
 		return "0.0";
@@ -782,7 +750,69 @@ std::string Shader::getGLSLVersion()
 
 bool Shader::isSupported()
 {
-	return GLEE_VERSION_2_0 && getGLSLVersion() >= "1.2";
+	return GLAD_ES_VERSION_2_0 || (getGLSLVersion() >= "1.2");
+}
+
+int Shader::getUniformTypeSize(GLenum type) const
+{
+	switch (type)
+	{
+	case GL_INT:
+	case GL_FLOAT:
+	case GL_BOOL:
+	case GL_SAMPLER_1D:
+	case GL_SAMPLER_2D:
+	case GL_SAMPLER_3D:
+		return 1;
+	case GL_INT_VEC2:
+	case GL_FLOAT_VEC2:
+	case GL_FLOAT_MAT2:
+	case GL_BOOL_VEC2:
+		return 2;
+	case GL_INT_VEC3:
+	case GL_FLOAT_VEC3:
+	case GL_FLOAT_MAT3:
+	case GL_BOOL_VEC3:
+		return 3;
+	case GL_INT_VEC4:
+	case GL_FLOAT_VEC4:
+	case GL_FLOAT_MAT4:
+	case GL_BOOL_VEC4:
+		return 4;
+	default:
+		return 1;
+	}
+}
+
+Shader::UniformType Shader::getUniformBaseType(GLenum type) const
+{
+	switch (type)
+	{
+	case GL_INT:
+	case GL_INT_VEC2:
+	case GL_INT_VEC3:
+	case GL_INT_VEC4:
+		return UNIFORM_INT;
+	case GL_FLOAT:
+	case GL_FLOAT_VEC2:
+	case GL_FLOAT_VEC3:
+	case GL_FLOAT_VEC4:
+	case GL_FLOAT_MAT2:
+	case GL_FLOAT_MAT3:
+	case GL_FLOAT_MAT4:
+		return UNIFORM_FLOAT;
+	case GL_BOOL:
+	case GL_BOOL_VEC2:
+	case GL_BOOL_VEC3:
+	case GL_BOOL_VEC4:
+		return UNIFORM_BOOL;
+	case GL_SAMPLER_1D:
+	case GL_SAMPLER_2D:
+	case GL_SAMPLER_3D:
+		return UNIFORM_SAMPLER;
+	default:
+		return UNIFORM_UNKNOWN;
+	}
 }
 
 bool Shader::getConstant(const char *in, UniformType &out)
@@ -814,15 +844,22 @@ StringMap<Shader::UniformType, Shader::UNIFORM_MAX_ENUM>::Entry Shader::uniformT
 
 StringMap<Shader::UniformType, Shader::UNIFORM_MAX_ENUM> Shader::uniformTypes(Shader::uniformTypeEntries, sizeof(Shader::uniformTypeEntries));
 
-StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM>::Entry Shader::attribNameEntries[] =
+StringMap<VertexAttribID, ATTRIB_MAX_ENUM>::Entry Shader::attribNameEntries[] =
 {
-	{"love_PseudoInstanceID", OpenGL::ATTRIB_PSEUDO_INSTANCE_ID},
+	{"VertexPosition", ATTRIB_POS},
+	{"VertexTexCoord", ATTRIB_TEXCOORD},
+	{"VertexColor", ATTRIB_COLOR},
+	{"love_PseudoInstanceID", ATTRIB_PSEUDO_INSTANCE_ID},
 };
 
-StringMap<OpenGL::VertexAttrib, OpenGL::ATTRIB_MAX_ENUM> Shader::attribNames(Shader::attribNameEntries, sizeof(Shader::attribNameEntries));
+StringMap<VertexAttribID, ATTRIB_MAX_ENUM> Shader::attribNames(Shader::attribNameEntries, sizeof(Shader::attribNameEntries));
 
 StringMap<Shader::BuiltinUniform, Shader::BUILTIN_MAX_ENUM>::Entry Shader::builtinNameEntries[] =
 {
+	{"TransformMatrix", Shader::BUILTIN_TRANSFORM_MATRIX},
+	{"ProjectionMatrix", Shader::BUILTIN_PROJECTION_MATRIX},
+	{"TransformProjectionMatrix", Shader::BUILTIN_TRANSFORM_PROJECTION_MATRIX},
+	{"love_PointSize", Shader::BUILTIN_POINT_SIZE},
 	{"love_ScreenSize", Shader::BUILTIN_SCREEN_SIZE},
 };
 

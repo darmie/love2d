@@ -44,21 +44,12 @@ public:
 		DRAW_MAX_ENUM
 	};
 
-	enum AlignMode
-	{
-		ALIGN_LEFT,
-		ALIGN_CENTER,
-		ALIGN_RIGHT,
-		ALIGN_JUSTIFY,
-		ALIGN_MAX_ENUM
-	};
-
 	enum BlendMode
 	{
 		BLEND_ALPHA,
-		BLEND_ADDITIVE,
-		BLEND_SUBTRACTIVE,
-		BLEND_MULTIPLICATIVE,
+		BLEND_ADD,
+		BLEND_SUBTRACT,
+		BLEND_MULTIPLY,
 		BLEND_PREMULTIPLIED,
 		BLEND_SCREEN,
 		BLEND_REPLACE,
@@ -80,26 +71,18 @@ public:
 		LINE_JOIN_MAX_ENUM
 	};
 
-	enum PointStyle
-	{
-		POINT_ROUGH,
-		POINT_SMOOTH,
-		POINT_MAX_ENUM
-	};
-
 	enum Support
 	{
-		SUPPORT_CANVAS,
-		SUPPORT_HDR_CANVAS,
 		SUPPORT_MULTI_CANVAS,
-		SUPPORT_SHADER,
-		SUPPORT_NPOT,
-		SUPPORT_SUBTRACTIVE,
-		SUPPORT_MIPMAP,
-		SUPPORT_DXT,
-		SUPPORT_BC5,
 		SUPPORT_SRGB,
 		SUPPORT_MAX_ENUM
+	};
+
+	enum Renderer
+	{
+		RENDERER_OPENGL = 0,
+		RENDERER_OPENGLES,
+		RENDERER_MAX_ENUM
 	};
 
 	enum SystemLimit
@@ -107,7 +90,6 @@ public:
 		LIMIT_POINT_SIZE,
 		LIMIT_TEXTURE_SIZE,
 		LIMIT_MULTI_CANVAS,
-		LIMIT_CANVAS_FSAA, // For backward-compatibility. TODO: remove!
 		LIMIT_CANVAS_MSAA,
 		LIMIT_MAX_ENUM
 	};
@@ -117,6 +99,13 @@ public:
 		STACK_ALL,
 		STACK_TRANSFORM,
 		STACK_MAX_ENUM
+	};
+
+	enum ClearType
+	{
+		CLEAR_ALL,
+		CLEAR_STENCIL,
+		CLEAR_MAX_ENUM
 	};
 
 	enum StatType
@@ -192,9 +181,6 @@ public:
 	static bool getConstant(const char *in, DrawMode &out);
 	static bool getConstant(DrawMode in, const char  *&out);
 
-	static bool getConstant(const char *in, AlignMode &out);
-	static bool getConstant(AlignMode in, const char  *&out);
-
 	static bool getConstant(const char *in, BlendMode &out);
 	static bool getConstant(BlendMode in, const char  *&out);
 
@@ -203,9 +189,6 @@ public:
 
 	static bool getConstant(const char *in, LineJoin &out);
 	static bool getConstant(LineJoin in, const char  *&out);
-
-	static bool getConstant(const char *in, PointStyle &out);
-	static bool getConstant(PointStyle in, const char  *&out);
 
 	static bool getConstant(const char *in, Support &out);
 	static bool getConstant(Support in, const char  *&out);
@@ -216,6 +199,9 @@ public:
 	static bool getConstant(const char *in, StackType &out);
 	static bool getConstant(StackType in, const char *&out);
 
+	static bool getConstant(const char *in, ClearType &out);
+	static bool getConstant(ClearType in, const char *&out);
+
 	static bool getConstant(const char *in, StatType &out);
 	static bool getConstant(StatType in, const char *&out);
 
@@ -223,9 +209,6 @@ private:
 
 	static StringMap<DrawMode, DRAW_MAX_ENUM>::Entry drawModeEntries[];
 	static StringMap<DrawMode, DRAW_MAX_ENUM> drawModes;
-
-	static StringMap<AlignMode, ALIGN_MAX_ENUM>::Entry alignModeEntries[];
-	static StringMap<AlignMode, ALIGN_MAX_ENUM> alignModes;
 
 	static StringMap<BlendMode, BLEND_MAX_ENUM>::Entry blendModeEntries[];
 	static StringMap<BlendMode, BLEND_MAX_ENUM> blendModes;
@@ -236,9 +219,6 @@ private:
 	static StringMap<LineJoin, LINE_JOIN_MAX_ENUM>::Entry lineJoinEntries[];
 	static StringMap<LineJoin, LINE_JOIN_MAX_ENUM> lineJoins;
 
-	static StringMap<PointStyle, POINT_MAX_ENUM>::Entry pointStyleEntries[];
-	static StringMap<PointStyle, POINT_MAX_ENUM> pointStyles;
-
 	static StringMap<Support, SUPPORT_MAX_ENUM>::Entry supportEntries[];
 	static StringMap<Support, SUPPORT_MAX_ENUM> support;
 
@@ -247,6 +227,9 @@ private:
 
 	static StringMap<StackType, STACK_MAX_ENUM>::Entry stackTypeEntries[];
 	static StringMap<StackType, STACK_MAX_ENUM> stackTypes;
+
+	static StringMap<ClearType, CLEAR_MAX_ENUM>::Entry clearTypeEntries[];
+	static StringMap<ClearType, CLEAR_MAX_ENUM> clearTypes;
 
 	static StringMap<StatType, STAT_MAX_ENUM>::Entry statTypeEntries[];
 	static StringMap<StatType, STAT_MAX_ENUM> statTypes;

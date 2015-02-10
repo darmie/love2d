@@ -44,6 +44,18 @@ public:
 
 };
 
+class SpatialSupportException : public love::Exception
+{
+public:
+
+	SpatialSupportException()
+		: Exception("This spatial audio functionality is only available for mono Sources. \
+Ensure the Source is not multi-channel before calling this function.")
+	{
+	}
+
+};
+
 StaticDataBuffer::StaticDataBuffer(ALenum format, const ALvoid *data, ALsizei size, ALsizei freq)
 {
 	alGenBuffers(1, &buffer);
@@ -423,6 +435,9 @@ float Source::tell(Source::Unit unit)
 
 void Source::setPosition(float *v)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alSourcefv(source, AL_POSITION, v);
 
@@ -431,6 +446,9 @@ void Source::setPosition(float *v)
 
 void Source::getPosition(float *v) const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alGetSourcefv(source, AL_POSITION, v);
 	else
@@ -439,6 +457,9 @@ void Source::getPosition(float *v) const
 
 void Source::setVelocity(float *v)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alSourcefv(source, AL_VELOCITY, v);
 
@@ -447,6 +468,9 @@ void Source::setVelocity(float *v)
 
 void Source::getVelocity(float *v) const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alGetSourcefv(source, AL_VELOCITY, v);
 	else
@@ -455,6 +479,9 @@ void Source::getVelocity(float *v) const
 
 void Source::setDirection(float *v)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alSourcefv(source, AL_DIRECTION, v);
 	else
@@ -463,6 +490,9 @@ void Source::setDirection(float *v)
 
 void Source::getDirection(float *v) const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alGetSourcefv(source, AL_DIRECTION, v);
 	else
@@ -471,6 +501,9 @@ void Source::getDirection(float *v) const
 
 void Source::setCone(float innerAngle, float outerAngle, float outerVolume)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	cone.innerAngle = (int) LOVE_TODEG(innerAngle);
 	cone.outerAngle = (int) LOVE_TODEG(outerAngle);
 	cone.outerVolume = outerVolume;
@@ -485,6 +518,9 @@ void Source::setCone(float innerAngle, float outerAngle, float outerVolume)
 
 void Source::getCone(float &innerAngle, float &outerAngle, float &outerVolume) const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	innerAngle = LOVE_TORAD(cone.innerAngle);
 	outerAngle = LOVE_TORAD(cone.outerAngle);
 	outerVolume = cone.outerVolume;
@@ -492,6 +528,9 @@ void Source::getCone(float &innerAngle, float &outerAngle, float &outerVolume) c
 
 void Source::setRelative(bool enable)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 		alSourcei(source, AL_SOURCE_RELATIVE, relative ? AL_TRUE : AL_FALSE);
 
@@ -500,6 +539,9 @@ void Source::setRelative(bool enable)
 
 bool Source::isRelative() const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	return relative;
 }
 
@@ -644,7 +686,7 @@ void Source::reset()
 	alSourcef(source, AL_REFERENCE_DISTANCE, referenceDistance);
 	alSourcef(source, AL_ROLLOFF_FACTOR, rolloffFactor);
 	alSourcef(source, AL_MAX_DISTANCE, maxDistance);
-	alSourcei(source, AL_LOOPING, isStatic() && isLooping() ? AL_TRUE : AL_FALSE);
+	alSourcei(source, AL_LOOPING, (type == TYPE_STATIC) && isLooping() ? AL_TRUE : AL_FALSE);
 	alSourcei(source, AL_SOURCE_RELATIVE, relative ? AL_TRUE : AL_FALSE);
 	alSourcei(source, AL_CONE_INNER_ANGLE, cone.innerAngle);
 	alSourcei(source, AL_CONE_OUTER_ANGLE, cone.outerAngle);
@@ -721,11 +763,6 @@ int Source::streamAtomic(ALuint buffer, love::sound::Decoder *d)
 	return decoded;
 }
 
-bool Source::isStatic() const
-{
-	return (type == TYPE_STATIC);
-}
-
 void Source::setMinVolume(float volume)
 {
 	if (valid)
@@ -774,6 +811,9 @@ float Source::getMaxVolume() const
 
 void Source::setReferenceDistance(float distance)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		alSourcef(source, AL_REFERENCE_DISTANCE, distance);
@@ -784,6 +824,9 @@ void Source::setReferenceDistance(float distance)
 
 float Source::getReferenceDistance() const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		ALfloat f;
@@ -797,6 +840,9 @@ float Source::getReferenceDistance() const
 
 void Source::setRolloffFactor(float factor)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		alSourcef(source, AL_ROLLOFF_FACTOR, factor);
@@ -807,6 +853,9 @@ void Source::setRolloffFactor(float factor)
 
 float Source::getRolloffFactor() const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		ALfloat f;
@@ -820,6 +869,9 @@ float Source::getRolloffFactor() const
 
 void Source::setMaxDistance(float distance)
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		alSourcef(source, AL_MAX_DISTANCE, distance);
@@ -830,6 +882,9 @@ void Source::setMaxDistance(float distance)
 
 float Source::getMaxDistance() const
 {
+	if (channels > 1)
+		throw SpatialSupportException();
+
 	if (valid)
 	{
 		ALfloat f;

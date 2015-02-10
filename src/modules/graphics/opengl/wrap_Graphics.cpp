@@ -45,9 +45,15 @@ int w_reset(lua_State *)
 	return 0;
 }
 
-int w_clear(lua_State *)
+int w_clear(lua_State *L)
 {
-	instance()->clear();
+	Graphics::ClearType type = Graphics::CLEAR_ALL;
+
+	const char *tname = lua_isnoneornil(L, 1) ? nullptr : luaL_checkstring(L, 1);
+	if (tname && !Graphics::getConstant(tname, type))
+		return luaL_error(L, "Invalid graphics clear type: %s", tname);
+
+	instance()->clear(type);
 	return 0;
 }
 
@@ -119,38 +125,42 @@ int w_getScissor(lua_State *L)
 	return 4;
 }
 
-static int setStencil(lua_State *L, bool invert)
+int w_stencil(lua_State *L)
 {
-	// no argument -> clear stencil
-	if (lua_isnoneornil(L, 1))
-	{
-		instance()->discardStencil();
-		return 0;
-	}
-
 	luaL_checktype(L, 1, LUA_TFUNCTION);
 
-	instance()->defineStencil();
-	lua_call(L, lua_gettop(L) - 1, 0); // call stencil(...)
-	instance()->useStencil(invert);
+	instance()->drawToStencilBuffer(true);
+
+	// Call stencilfunc(...)
+	lua_call(L, lua_gettop(L) - 1, 0);
+
+	instance()->drawToStencilBuffer(false);
 
 	return 0;
 }
 
-int w_setStencil(lua_State *L)
+int w_setStencilTest(lua_State *L)
 {
-	return setStencil(L, false);
+	bool enable = luax_toboolean(L, 1);
+	bool invert = luax_toboolean(L, 2);
+	instance()->setStencilTest(enable, invert);
+	return 0;
 }
 
-int w_setInvertedStencil(lua_State *L)
+int w_getStencilTest(lua_State *L)
 {
-	return setStencil(L, true);
+	bool enabled, inverted;
+	instance()->getStencilTest(enabled, inverted);
+	luax_pushboolean(L, enabled);
+	luax_pushboolean(L, inverted);
+	return 2;
 }
 
-int w_getMaxTextureSize(lua_State *L)
+static const char *imageFlagName(Image::FlagType flagtype)
 {
-	lua_pushinteger(L, instance()->getSystemLimit(Graphics::LIMIT_TEXTURE_SIZE));
-	return 1;
+	const char *name = nullptr;
+	Image::getConstant(flagtype, name);
+	return name;
 }
 
 int w_newImage(lua_State *L)
@@ -158,11 +168,13 @@ int w_newImage(lua_State *L)
 	love::image::ImageData *data = nullptr;
 	love::image::CompressedData *cdata = nullptr;
 
-	Image::Format format = Image::FORMAT_NORMAL;
-	const char *fstr = lua_isnoneornil(L, 2) ? nullptr : luaL_checkstring(L, 2);
-
-	if (fstr != nullptr && !Image::getConstant(fstr, format))
-		return luaL_error(L, "Invalid Image format: %s", fstr);
+	Image::Flags flags;
+	if (!lua_isnoneornil(L, 2))
+	{
+		luaL_checktype(L, 2, LUA_TTABLE);
+		flags.mipmaps = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_MIPMAPS), flags.mipmaps);
+		flags.sRGB = luax_boolflag(L, 2, imageFlagName(Image::FLAG_TYPE_SRGB), flags.sRGB);
+	}
 
 	bool releasedata = false;
 
@@ -206,9 +218,9 @@ int w_newImage(lua_State *L)
 	luax_catchexcept(L,
 		[&]() {
 			if (cdata)
-				image = instance()->newImage(cdata, format);
+				image = instance()->newImage(cdata, flags);
 			else if (data)
-				image = instance()->newImage(data, format);
+				image = instance()->newImage(data, flags);
 		},
 		[&]() {
 			if (releasedata && data)
@@ -246,10 +258,10 @@ int w_newQuad(lua_State *L)
 
 int w_newFont(lua_State *L)
 {
-	// Convert to Rasterizer, if necessary. Note that lua_isstring returns true
-	// if the value is a number, which we rely on for the variant that uses the
-	// default Font rather than a font file.
-	if (lua_isstring(L, 1) || luax_istype(L, 1, FILESYSTEM_FILE_T) || luax_istype(L, 1, FILESYSTEM_FILE_DATA_T))
+	Font *font = nullptr;
+
+	// Convert to Rasterizer, if necessary.
+	if (!luax_istype(L, 1, FONT_RASTERIZER_T))
 	{
 		std::vector<int> idxs;
 		for (int i = 0; i < lua_gettop(L); i++)
@@ -260,13 +272,9 @@ int w_newFont(lua_State *L)
 
 	love::font::Rasterizer *rasterizer = luax_checktype<love::font::Rasterizer>(L, 1, "Rasterizer", FONT_RASTERIZER_T);
 
-	Font *font = 0;
 	luax_catchexcept(L, [&]() {
 		font = instance()->newFont(rasterizer, instance()->getDefaultFilter()); }
 	);
-
-	if (font == 0)
-		return luaL_error(L, "Could not load font.");
 
 	// Push the type.
 	luax_pushtype(L, "Font", GRAPHICS_FONT_T, font);
@@ -280,9 +288,7 @@ int w_newImageFont(lua_State *L)
 	Texture::Filter filter = instance()->getDefaultFilter();
 
 	// Convert to ImageData if necessary.
-	if (lua_isstring(L, 1) || luax_istype(L, 1, FILESYSTEM_FILE_T) || luax_istype(L, 1, FILESYSTEM_FILE_DATA_T))
-		luax_convobj(L, 1, "image", "newImageData");
-	else if (luax_istype(L, 1, GRAPHICS_IMAGE_T))
+	if (luax_istype(L, 1, GRAPHICS_IMAGE_T))
 	{
 		Image *i = luax_checktype<Image>(L, 1, "Image", GRAPHICS_IMAGE_T);
 		filter = i->getFilter();
@@ -294,11 +300,11 @@ int w_newImageFont(lua_State *L)
 	}
 
 	// Convert to Rasterizer if necessary.
-	if (luax_istype(L, 1, IMAGE_IMAGE_DATA_T))
+	if (!luax_istype(L, 1, FONT_RASTERIZER_T))
 	{
 		luaL_checkstring(L, 2);
 		int idxs[] = {1, 2};
-		luax_convobj(L, idxs, 2, "font", "newRasterizer");
+		luax_convobj(L, idxs, 2, "font", "newImageRasterizer");
 	}
 
 	love::font::Rasterizer *rasterizer = luax_checktype<love::font::Rasterizer>(L, 1, "Rasterizer", FONT_RASTERIZER_T);
@@ -306,13 +312,9 @@ int w_newImageFont(lua_State *L)
 	// Create the font.
 	Font *font = instance()->newFont(rasterizer, filter);
 
-	if (font == 0)
-		return luaL_error(L, "Could not load font.");
-
 	// Push the type.
 	luax_pushtype(L, "Font", GRAPHICS_FONT_T, font);
 	font->release();
-
 	return 1;
 }
 
@@ -382,9 +384,6 @@ int w_newCanvas(lua_State *L)
 
 int w_newShader(lua_State *L)
 {
-	if (!Shader::isSupported())
-		return luaL_error(L, "Sorry, your graphics card does not support shaders.");
-
 	// clamp stack to 2 elements
 	lua_settop(L, 2);
 
@@ -567,6 +566,23 @@ int w_newMesh(lua_State *L)
 	return 1;
 }
 
+int w_newText(lua_State *L)
+{
+	Font *font = luax_checkfont(L, 1);
+	Text *t = nullptr;
+
+	if (lua_isnoneornil(L, 2))
+		luax_catchexcept(L, [&](){ t = instance()->newText(font); });
+	else
+	{
+		std::string text = luax_checkstring(L, 2);
+		luax_catchexcept(L, [&](){ t = instance()->newText(font, text); });
+	}
+
+	luax_pushtype(L, "Text", GRAPHICS_TEXT_T, t);
+	return 1;
+}
+
 int w_setColor(lua_State *L)
 {
 	Color c;
@@ -724,26 +740,20 @@ int w_getBlendMode(lua_State *L)
 
 int w_setDefaultFilter(lua_State *L)
 {
-	Texture::FilterMode min;
-	Texture::FilterMode mag;
+	Texture::Filter f;
 
 	const char *minstr = luaL_checkstring(L, 1);
 	const char *magstr = luaL_optstring(L, 2, minstr);
 
-	if (!Texture::getConstant(minstr, min))
+	if (!Texture::getConstant(minstr, f.min))
 		return luaL_error(L, "Invalid filter mode: %s", minstr);
-	if (!Texture::getConstant(magstr, mag))
+	if (!Texture::getConstant(magstr, f.mag))
 		return luaL_error(L, "Invalid filter mode: %s", magstr);
 
-	float anisotropy = (float) luaL_optnumber(L, 3, 1.0);
-
-	Texture::Filter f;
-	f.min = min;
-	f.mag = mag;
-	f.anisotropy = anisotropy;
+	f.anisotropy = (float) luaL_optnumber(L, 3, 1.0);
 
 	instance()->setDefaultFilter(f);
-	
+
 	return 0;
 }
 
@@ -859,37 +869,9 @@ int w_setPointSize(lua_State *L)
 	return 0;
 }
 
-int w_setPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style;
-
-	const char *str = luaL_checkstring(L, 1);
-	if (!Graphics::getConstant(str, style))
-		return luaL_error(L, "Invalid point style: %s", str);
-
-	instance()->setPointStyle(style);
-	return 0;
-}
-
 int w_getPointSize(lua_State *L)
 {
 	lua_pushnumber(L, instance()->getPointSize());
-	return 1;
-}
-
-int w_getPointStyle(lua_State *L)
-{
-	Graphics::PointStyle style = instance()->getPointStyle();
-	const char *str;
-	if (!Graphics::getConstant(style, str))
-		return luaL_error(L, "Unknown point style");
-	lua_pushstring(L, str);
-	return 1;
-}
-
-int w_getMaxPointSize(lua_State *L)
-{
-	lua_pushnumber(L, instance()->getSystemLimit(Graphics::LIMIT_POINT_SIZE));
 	return 1;
 }
 
@@ -920,8 +902,8 @@ int w_newScreenshot(lua_State *L)
 
 int w_setCanvas(lua_State *L)
 {
-	// discard stencil testing
-	instance()->discardStencil();
+	// Disable stencil writes.
+	instance()->drawToStencilBuffer(false);
 
 	// called with none -> reset to default buffer
 	if (lua_isnoneornil(L, 1))
@@ -1002,25 +984,53 @@ int w_getShader(lua_State *L)
 	return 1;
 }
 
-int w_isSupported(lua_State *L)
+int w_setDefaultShaderCode(lua_State *L)
 {
-	bool supported = true;
+	luaL_checktype(L, 1, LUA_TTABLE);
 
-	for (int i = 1; i <= lua_gettop(L); i++)
+	lua_getfield(L, 1, "opengl");
+	lua_rawgeti(L, -1, 1);
+	lua_rawgeti(L, -2, 2);
+
+	Shader::ShaderSource openglcode;
+	openglcode.vertex = luax_checkstring(L, -2);
+	openglcode.pixel = luax_checkstring(L, -1);
+
+	lua_pop(L, 3);
+
+	lua_getfield(L, 1, "opengles");
+	lua_rawgeti(L, -1, 1);
+	lua_rawgeti(L, -2, 2);
+
+	Shader::ShaderSource openglescode;
+	openglescode.vertex = luax_checkstring(L, -2);
+	openglescode.pixel = luax_checkstring(L, -1);
+
+	lua_pop(L, 3);
+
+	Shader::defaultCode[Graphics::RENDERER_OPENGL]   = openglcode;
+	Shader::defaultCode[Graphics::RENDERER_OPENGLES] = openglescode;
+
+	return 0;
+}
+
+
+int w_getSupported(lua_State *L)
+{
+	lua_createtable(L, 0, (int) Graphics::SUPPORT_MAX_ENUM);
+
+	for (int i = 0; i < (int) Graphics::SUPPORT_MAX_ENUM; i++)
 	{
-		const char *str = luaL_checkstring(L, i);
-		Graphics::Support feature;
-		if (!Graphics::getConstant(str, feature))
-			return luaL_error(L, "Invalid graphics feature: %s", str);
+		Graphics::Support feature = (Graphics::Support) i;
+		const char *name = nullptr;
 
-		if (!instance()->isSupported(feature))
-		{
-			supported = false;
-			break;
-		}
+		if (!Graphics::getConstant(feature, name))
+			continue;
+
+		luax_pushboolean(L, instance()->isSupported(feature));
+		lua_setfield(L, -2, name);
 	}
 
-	luax_pushboolean(L, supported);
 	return 1;
 }
 
@@ -1058,7 +1068,7 @@ int w_getCompressedImageFormats(lua_State *L)
 		if (!image::CompressedData::getConstant(format, name))
 			continue;
 
-		luax_pushboolean(L, Image::hasCompressedTextureSupport(format));
+		luax_pushboolean(L, Image::hasCompressedTextureSupport(format, false));
 		lua_setfield(L, -2, name);
 	}
 
@@ -1075,6 +1085,25 @@ int w_getRendererInfo(lua_State *L)
 	luax_pushstring(L, info.vendor);
 	luax_pushstring(L, info.device);
 	return 4;
+}
+
+int w_getSystemLimits(lua_State *L)
+{
+	lua_createtable(L, 0, (int) Graphics::LIMIT_MAX_ENUM);
+
+	for (int i = 0; i < (int) Graphics::LIMIT_MAX_ENUM; i++)
+	{
+		Graphics::SystemLimit limittype = (Graphics::SystemLimit) i;
+		const char *name = nullptr;
+
+		if (!Graphics::getConstant(limittype, name))
+			continue;
+
+		lua_pushnumber(L, instance()->getSystemLimit(limittype));
+		lua_setfield(L, -2, name);
+	}
+
+	return 1;
 }
 
 int w_getStats(lua_State *L)
@@ -1108,19 +1137,7 @@ int w_getStats(lua_State *L)
 	Graphics::getConstant(Graphics::STAT_TEXTURE_MEMORY, sname);
 	lua_pushnumber(L, (lua_Number) stats.textureMemory);
 	lua_setfield(L, -2, sname);
-
-	return 1;
-}
-
-int w_getSystemLimit(lua_State *L)
-{
-	const char *limitstr = luaL_checkstring(L, 1);
-	Graphics::SystemLimit limittype;
-
-	if (!Graphics::getConstant(limitstr, limittype))
-		return luaL_error(L, "Invalid system limit type: %s", limitstr);
-
-	lua_pushnumber(L, instance()->getSystemLimit(limittype));
+	
 	return 1;
 }
 
@@ -1196,14 +1213,14 @@ int w_printf(lua_State *L)
 	float ox = 0.0f, oy = 0.0f;
 	float kx = 0.0f, ky = 0.0f;
 
-	Graphics::AlignMode align = Graphics::ALIGN_LEFT;
+	Font::AlignMode align = Font::ALIGN_LEFT;
 
 	if (lua_gettop(L) >= 5)
 	{
 		if (!lua_isnil(L, 5))
 		{
 			const char *str = luaL_checkstring(L, 5);
-			if (!Graphics::getConstant(str, align))
+			if (!Font::getConstant(str, align))
 				return luaL_error(L, "Incorrect alignment: %s", str);
 		}
 
@@ -1443,6 +1460,7 @@ static const luaL_Reg functions[] =
 	{ "newCanvas", w_newCanvas },
 	{ "newShader", w_newShader },
 	{ "newMesh", w_newMesh },
+	{ "newText", w_newText },
 
 	{ "setColor", w_setColor },
 	{ "getColor", w_getColor },
@@ -1468,9 +1486,7 @@ static const luaL_Reg functions[] =
 	{ "getLineStyle", w_getLineStyle },
 	{ "getLineJoin", w_getLineJoin },
 	{ "setPointSize", w_setPointSize },
-	{ "setPointStyle", w_setPointStyle },
 	{ "getPointSize", w_getPointSize },
-	{ "getPointStyle", w_getPointStyle },
 	{ "setWireframe", w_setWireframe },
 	{ "isWireframe", w_isWireframe },
 	{ "newScreenshot", w_newScreenshot },
@@ -1479,13 +1495,14 @@ static const luaL_Reg functions[] =
 
 	{ "setShader", w_setShader },
 	{ "getShader", w_getShader },
+	{ "_setDefaultShaderCode", w_setDefaultShaderCode },
 
-	{ "isSupported", w_isSupported },
+	{ "getSupported", w_getSupported },
 	{ "getCanvasFormats", w_getCanvasFormats },
 	{ "getCompressedImageFormats", w_getCompressedImageFormats },
 	{ "getRendererInfo", w_getRendererInfo },
+	{ "getSystemLimits", w_getSystemLimits },
 	{ "getStats", w_getStats },
-	{ "getSystemLimit", w_getSystemLimit },
 
 	{ "draw", w_draw },
 
@@ -1500,8 +1517,9 @@ static const luaL_Reg functions[] =
 	{ "setScissor", w_setScissor },
 	{ "getScissor", w_getScissor },
 
-	{ "setStencil", w_setStencil },
-	{ "setInvertedStencil", w_setInvertedStencil },
+	{ "stencil", w_stencil },
+	{ "setStencilTest", w_setStencilTest },
+	{ "getStencilTest", w_getStencilTest },
 
 	{ "point", w_point },
 	{ "line", w_line },
@@ -1519,10 +1537,6 @@ static const luaL_Reg functions[] =
 	{ "shear", w_shear },
 	{ "origin", w_origin },
 
-	// Deprecated since 0.9.1.
-	{ "getMaxImageSize", w_getMaxTextureSize },
-	{ "getMaxPointSize", w_getMaxPointSize },
-
 	{ 0, 0 }
 };
 
@@ -1537,6 +1551,7 @@ static const lua_CFunction types[] =
 	luaopen_canvas,
 	luaopen_shader,
 	luaopen_mesh,
+	luaopen_text,
 	0
 };
 
