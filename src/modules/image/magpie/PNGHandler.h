@@ -18,26 +18,40 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_FONT_FREETYPE_WRAP_FONT_H
-#define LOVE_FONT_FREETYPE_WRAP_FONT_H
+#ifndef LOVE_IMAGE_MAGPIE_PNG_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_PNG_HANDLER_H
 
 // LOVE
-#include "common/config.h"
-#include "common/runtime.h"
+#include "FormatHandler.h"
 
 namespace love
 {
-namespace font
+namespace image
 {
-namespace freetype
+namespace magpie
 {
 
-int w_newRasterizer(lua_State *L);
-int w_newGlyphData(lua_State *L);
-extern "C" LOVE_EXPORT int luaopen_love_font(lua_State *L);
+/**
+ * Interface between ImageData and LodePNG.
+ **/
+class PNGHandler : public FormatHandler
+{
+public:
 
-} // freetype
-} // font
+	// Implements FormatHandler.
+
+	virtual bool canDecode(love::filesystem::FileData *data);
+	virtual bool canEncode(ImageData::Format format);
+
+	virtual DecodedImage decode(love::filesystem::FileData *data);
+	virtual EncodedImage encode(const DecodedImage &img, ImageData::Format format);
+
+	virtual void free(unsigned char *mem);
+
+}; // PNGHandler
+
+} // magpie
+} // image
 } // love
 
-#endif // LOVE_FONT_FREETYPE_WRAP_FONT_H
+#endif // LOVE_IMAGE_MAGPIE_PNG_HANDLER_H
