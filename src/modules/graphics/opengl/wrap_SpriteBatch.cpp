@@ -78,7 +78,7 @@ int w_SpriteBatch_add(lua_State *L)
 int w_SpriteBatch_set(lua_State *L)
 {
 	SpriteBatch *t = luax_checkspritebatch(L, 1);
-	int id = luaL_checkinteger(L, 2);
+	int id = luaL_checkint(L, 2);
 
 	Quad *quad = nullptr;
 	int startidx = 3;
@@ -115,12 +115,6 @@ int w_SpriteBatch_clear(lua_State *L)
 {
 	SpriteBatch *t = luax_checkspritebatch(L, 1);
 	t->clear();
-	return 0;
-}
-
-int w_SpriteBatch_bind(lua_State* /*L*/)
-{
-	// No-op (deprecated.)
 	return 0;
 }
 
@@ -242,15 +236,6 @@ static const luaL_Reg functions[] =
 	{ "getCount", w_SpriteBatch_getCount },
 	{ "setBufferSize", w_SpriteBatch_setBufferSize },
 	{ "getBufferSize", w_SpriteBatch_getBufferSize },
-
-	// Deprecated since 0.9.1.
-	{ "setImage", w_SpriteBatch_setTexture },
-	{ "getImage", w_SpriteBatch_getTexture },
-
-	// Deprecated since 0.9.2.
-	{ "bind", w_SpriteBatch_bind },
-	{ "unbind", w_SpriteBatch_flush },
-
 	{ 0, 0 }
 };
 

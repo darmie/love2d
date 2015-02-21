@@ -26,7 +26,6 @@
 #include "Object.h"
 #include "Reference.h"
 #include "StringMap.h"
-#include <thread/threads.h>
 
 // C++
 #include <algorithm>
@@ -36,21 +35,14 @@
 namespace love
 {
 
-static thread::Mutex *gcmutex = nullptr;
-
 /**
  * Called when an object is collected. The object is released
  * once in this function, possibly deleting it.
  **/
 static int w__gc(lua_State *L)
 {
-	if (!gcmutex)
-		gcmutex = thread::newMutex();
-
 	Proxy *p = (Proxy *) lua_touserdata(L, 1);
 	Object *object = (Object *) p->data;
-
-	thread::Lock lock(gcmutex);
 
 	object->release();
 
@@ -338,19 +330,22 @@ int luax_table_insert(lua_State *L, int tindex, int vindex, int pos)
 		tindex = lua_gettop(L)+1+tindex;
 	if (vindex < 0)
 		vindex = lua_gettop(L)+1+vindex;
+
 	if (pos == -1)
 	{
 		lua_pushvalue(L, vindex);
-		lua_rawseti(L, tindex, lua_objlen(L, tindex)+1);
+		lua_rawseti(L, tindex, (int) lua_objlen(L, tindex)+1);
 		return 0;
 	}
 	else if (pos < 0)
-		pos = lua_objlen(L, tindex)+1+pos;
-	for (int i = lua_objlen(L, tindex)+1; i > pos; i--)
+		pos = (int) lua_objlen(L, tindex)+1+pos;
+
+	for (int i = (int) lua_objlen(L, tindex)+1; i > pos; i--)
 	{
 		lua_rawgeti(L, tindex, i-1);
 		lua_rawseti(L, tindex, i);
 	}
+
 	lua_pushvalue(L, vindex);
 	lua_rawseti(L, tindex, pos);
 	return 0;
@@ -642,6 +637,7 @@ StringMap<Type, TYPE_MAX_ENUM>::Entry typeEntries[] =
 
 	// Filesystem
 	{"File", FILESYSTEM_FILE_ID},
+	{"DroppedFile", FILESYSTEM_DROPPED_FILE_ID},
 	{"FileData", FILESYSTEM_FILE_DATA_ID},
 
 	// Font
@@ -659,6 +655,7 @@ StringMap<Type, TYPE_MAX_ENUM>::Entry typeEntries[] =
 	{"Canvas", GRAPHICS_CANVAS_ID},
 	{"Shader", GRAPHICS_SHADER_ID},
 	{"Mesh", GRAPHICS_MESH_ID},
+	{"Text", GRAPHICS_TEXT_ID},
 
 	// Image
 	{"ImageData", IMAGE_IMAGE_DATA_ID},

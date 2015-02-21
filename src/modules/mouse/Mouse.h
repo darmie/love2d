@@ -44,8 +44,6 @@ public:
 		BUTTON_RIGHT,
 		BUTTON_X1,
 		BUTTON_X2,
-		BUTTON_WHEELUP,
-		BUTTON_WHEELDOWN,
 		BUTTON_MAX_ENUM
 	};
 
@@ -61,6 +59,8 @@ public:
 	virtual void setCursor() = 0;
 
 	virtual Cursor *getCursor() const = 0;
+
+	virtual bool hasCursor() const = 0;
 
 	virtual int getX() const = 0;
 	virtual int getY() const = 0;
