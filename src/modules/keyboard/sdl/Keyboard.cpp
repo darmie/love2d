@@ -47,14 +47,31 @@ bool Keyboard::hasKeyRepeat() const
 	return key_repeat;
 }
 
-bool Keyboard::isDown(Key *keylist) const
+bool Keyboard::isDown(const std::vector<Key> &keylist) const
 {
-	const Uint8 *keystate = SDL_GetKeyboardState(nullptr);
+	const Uint8 *state = SDL_GetKeyboardState(nullptr);
 
-	for (Key key = *keylist; key != KEY_MAX_ENUM; key = *(++keylist))
+	for (Key key : keylist)
 	{
 		SDL_Scancode scancode = SDL_GetScancodeFromKey(keymap[key]);
-		if (keystate[scancode])
+		if (state[scancode])
+			return true;
+	}
+
+	return false;
+}
+
+bool Keyboard::isScancodeDown(const std::vector<Scancode> &scancodelist) const
+{
+	const Uint8 *state = SDL_GetKeyboardState(nullptr);
+
+	for (Scancode scancode : scancodelist)
+	{
+		SDL_Scancode sdlscancode = SDL_SCANCODE_UNKNOWN;
+		if (!scancodes.find(scancode, sdlscancode))
+			continue;
+
+		if (state[sdlscancode])
 			return true;
 	}
 
@@ -100,9 +117,34 @@ void Keyboard::setTextInput(bool enable)
 		SDL_StopTextInput();
 }
 
+void Keyboard::setTextInput(bool enable, int x, int y, int w, int h)
+{
+	// TODO: SetTextInputRect expects coordinates in window-space, but
+	// setTextInput uses pixels. We should convert here.
+	SDL_Rect rect = {x, y, w, h};
+	SDL_SetTextInputRect(&rect);
+
+	setTextInput(enable);
+}
+
 bool Keyboard::hasTextInput() const
 {
 	return SDL_IsTextInputActive();
+}
+
+bool Keyboard::hasScreenKeyboard() const
+{
+	return SDL_HasScreenKeyboardSupport();
+}
+
+bool Keyboard::getConstant(Scancode in, SDL_Scancode &out)
+{
+	return scancodes.find(in, out);
+}
+
+bool Keyboard::getConstant(SDL_Scancode in, Scancode &out)
+{
+	return scancodes.find(in, out);
 }
 
 const SDL_Keycode *Keyboard::createKeyMap()
