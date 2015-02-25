@@ -26,7 +26,6 @@
 #include "Object.h"
 #include "Reference.h"
 #include "StringMap.h"
-#include <thread/threads.h>
 
 // C++
 #include <algorithm>
@@ -36,24 +35,14 @@
 namespace love
 {
 
-static thread::Mutex *gcmutex = nullptr;
-
 /**
  * Called when an object is collected. The object is released
  * once in this function, possibly deleting it.
  **/
 static int w__gc(lua_State *L)
 {
-	if (!gcmutex)
-		gcmutex = thread::newMutex();
-
 	Proxy *p = (Proxy *) lua_touserdata(L, 1);
-	Object *object = (Object *) p->data;
-
-	thread::Lock lock(gcmutex);
-
-	object->release();
-
+	p->object->release();
 	return 0;
 }
 
@@ -75,7 +64,7 @@ static int w__eq(lua_State *L)
 {
 	Proxy *p1 = (Proxy *)lua_touserdata(L, 1);
 	Proxy *p2 = (Proxy *)lua_touserdata(L, 2);
-	luax_pushboolean(L, p1->data == p2->data);
+	luax_pushboolean(L, p1->object == p2->object);
 	return 1;
 }
 
@@ -217,7 +206,7 @@ int luax_register_module(lua_State *L, const WrappedModule &m)
 	luax_insistregistry(L, REGISTRY_MODULES);
 
 	Proxy *p = (Proxy *)lua_newuserdata(L, sizeof(Proxy));
-	p->data = m.module;
+	p->object = m.module;
 	p->flags = m.flags;
 
 	luaL_newmetatable(L, m.module->getName());
@@ -338,19 +327,22 @@ int luax_table_insert(lua_State *L, int tindex, int vindex, int pos)
 		tindex = lua_gettop(L)+1+tindex;
 	if (vindex < 0)
 		vindex = lua_gettop(L)+1+vindex;
+
 	if (pos == -1)
 	{
 		lua_pushvalue(L, vindex);
-		lua_rawseti(L, tindex, lua_objlen(L, tindex)+1);
+		lua_rawseti(L, tindex, (int) lua_objlen(L, tindex)+1);
 		return 0;
 	}
 	else if (pos < 0)
-		pos = lua_objlen(L, tindex)+1+pos;
-	for (int i = lua_objlen(L, tindex)+1; i > pos; i--)
+		pos = (int) lua_objlen(L, tindex)+1+pos;
+
+	for (int i = (int) lua_objlen(L, tindex)+1; i > pos; i--)
 	{
 		lua_rawgeti(L, tindex, i-1);
 		lua_rawseti(L, tindex, i);
 	}
+
 	lua_pushvalue(L, vindex);
 	lua_rawseti(L, tindex, pos);
 	return 0;
@@ -388,7 +380,7 @@ void luax_rawnewtype(lua_State *L, const char *name, bits flags, love::Object *o
 
 	object->retain();
 
-	u->data = (void *) object;
+	u->object = object;
 	u->flags = flags;
 
 	luaL_newmetatable(L, name);
@@ -642,6 +634,7 @@ StringMap<Type, TYPE_MAX_ENUM>::Entry typeEntries[] =
 
 	// Filesystem
 	{"File", FILESYSTEM_FILE_ID},
+	{"DroppedFile", FILESYSTEM_DROPPED_FILE_ID},
 	{"FileData", FILESYSTEM_FILE_DATA_ID},
 
 	// Font
@@ -659,6 +652,7 @@ StringMap<Type, TYPE_MAX_ENUM>::Entry typeEntries[] =
 	{"Canvas", GRAPHICS_CANVAS_ID},
 	{"Shader", GRAPHICS_SHADER_ID},
 	{"Mesh", GRAPHICS_MESH_ID},
+	{"Text", GRAPHICS_TEXT_ID},
 
 	// Image
 	{"ImageData", IMAGE_IMAGE_DATA_ID},
