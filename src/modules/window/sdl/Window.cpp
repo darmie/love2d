@@ -31,8 +31,13 @@
 // C
 #include <cstdio>
 
-#ifdef LOVE_WINDOWS
+// SDL
+#include <SDL_syswm.h>
+
+#if defined(LOVE_WINDOWS)
 #include <windows.h>
+#elif defined(LOVE_MACOSX)
+#include "common/OSX.h"
 #endif
 
 #ifndef APIENTRY
@@ -148,7 +153,7 @@ bool Window::checkGLVersion(const ContextAttribs &attribs)
 	if (glmajor < attribs.versionMajor
 		|| (glmajor == attribs.versionMajor && glminor < attribs.versionMinor))
 		return false;
-	
+
 	return true;
 }
 
@@ -161,7 +166,7 @@ bool Window::createWindowAndContext(int x, int y, int w, int h, Uint32 windowfla
 #endif
 
 	const char *curdriver = SDL_GetCurrentVideoDriver();
-	const char *glesdrivers[] = {"RPI", "Android", "uikit", "winrt"};
+	const char *glesdrivers[] = {"RPI", "Android", "uikit", "winrt", "emscripten"};
 
 	// We always want to try OpenGL ES first on certain video backends.
 	for (const char *glesdriver : glesdrivers)
@@ -184,16 +189,18 @@ bool Window::createWindowAndContext(int x, int y, int w, int h, Uint32 windowfla
 	bool debug = (debughint != nullptr && debughint[0] != '0');
 
 	// Different context attribute profiles to try.
-	// FIXME: OpenGL ES 3 is disabled on non-iOS because SDL's EGL code doesn't
-	// properly handle OpenGL ES 3 context creation requests (for now.)
-	// https://bugzilla.libsdl.org/show_bug.cgi?id=2865
 	std::vector<ContextAttribs> attribslist = {
 		{2, 1, false, debug}, // OpenGL 2.1.
-#ifdef LOVE_IOS
 		{3, 0, true,  debug}, // OpenGL ES 3.
-#endif
 		{2, 0, true,  debug}, // OpenGL ES 2.
 	};
+
+	SDL_version sdlversion = {};
+	SDL_GetVersion(&sdlversion);
+
+	// OpenGL ES 3+ contexts are only properly supported in SDL 2.0.4+.
+	if (sdlversion.major == 2 && sdlversion.minor == 0 && sdlversion.patch <= 3)
+		attribslist.erase(attribslist.begin() + 1);
 
 	// Move OpenGL ES to the front of the list if we should prefer GLES.
 	if (preferGLES)
@@ -252,7 +259,10 @@ bool Window::createWindowAndContext(int x, int y, int w, int h, Uint32 windowfla
 			setGLFramebufferAttributes(0, false);
 			window = SDL_CreateWindow(title.c_str(), x, y, w, h, windowflags);
 			if (window)
-				curSRGB = curMSAA = 0;
+			{
+				curMSAA = 0;
+				curSRGB = false;
+			}
 		}
 
 		// Immediately try the next context profile if window creation failed.
@@ -350,7 +360,7 @@ bool Window::createWindowAndContext(int x, int y, int w, int h, Uint32 windowfla
 
 		return false;
 	}
-	
+
 	return true;
 }
 
@@ -839,7 +849,7 @@ void Window::setMouseGrab(bool grab)
 bool Window::isMouseGrabbed() const
 {
 	if (window)
-		return (bool) SDL_GetWindowGrab(window);
+		return SDL_GetWindowGrab(window) != SDL_FALSE;
 	else
 		return mouseGrabbed;
 }
@@ -936,17 +946,17 @@ int Window::showMessageBox(const MessageBoxData &data)
 
 	std::vector<SDL_MessageBoxButtonData> sdlbuttons;
 
-	for (size_t i = 0; i < data.buttons.size(); i++)
+	for (int i = 0; i < (int) data.buttons.size(); i++)
 	{
 		SDL_MessageBoxButtonData sdlbutton = {};
 
-		sdlbutton.buttonid = (int) i;
+		sdlbutton.buttonid = i;
 		sdlbutton.text = data.buttons[i].c_str();
 
-		if ((int) i == data.enterButtonIndex)
+		if (i == data.enterButtonIndex)
 			sdlbutton.flags |= SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
 
-		if ((int) i == data.escapeButtonIndex)
+		if (i == data.escapeButtonIndex)
 			sdlbutton.flags |= SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
 		sdlbuttons.push_back(sdlbutton);
@@ -958,6 +968,46 @@ int Window::showMessageBox(const MessageBoxData &data)
 	SDL_ShowMessageBox(&sdldata, &pressedbutton);
 
 	return pressedbutton;
+}
+
+void Window::requestAttention(bool continuous)
+{
+#if defined(LOVE_WINDOWS)
+
+	if (hasFocus())
+		return;
+
+	SDL_SysWMinfo wminfo = {};
+	SDL_VERSION(&wminfo.version);
+
+	if (SDL_GetWindowWMInfo(window, &wminfo))
+	{
+		FLASHWINFO flashinfo = {};
+		flashinfo.cbSize = sizeof(FLASHWINFO);
+		flashinfo.hwnd = wminfo.info.win.window;
+		flashinfo.uCount = 1;
+		flashinfo.dwFlags = FLASHW_ALL;
+
+		if (continuous)
+		{
+			flashinfo.uCount = 0;
+			flashinfo.dwFlags |= FLASHW_TIMERNOFG;
+		}
+
+		FlashWindowEx(&flashinfo);
+	}
+
+#elif defined(LOVE_MACOSX)
+
+	love::osx::requestAttention(continuous);
+
+#else
+
+	LOVE_UNUSED(continuous);
+	
+#endif
+	
+	// TODO: Linux?
 }
 
 love::window::Window *Window::createSingleton()

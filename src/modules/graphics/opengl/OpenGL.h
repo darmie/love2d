@@ -23,6 +23,7 @@
 
 // LOVE
 #include "common/config.h"
+#include "common/int.h"
 #include "graphics/Color.h"
 #include "graphics/Texture.h"
 #include "common/Matrix.h"
@@ -56,7 +57,16 @@ enum VertexAttribID
 	ATTRIB_POS = 0,
 	ATTRIB_TEXCOORD,
 	ATTRIB_COLOR,
+	ATTRIB_CONSTANTCOLOR,
 	ATTRIB_MAX_ENUM
+};
+
+enum VertexAttribFlags
+{
+	ATTRIBFLAG_POS = 1 << ATTRIB_POS,
+	ATTRIBFLAG_TEXCOORD = 1 << ATTRIB_TEXCOORD,
+	ATTRIBFLAG_COLOR = 1 << ATTRIB_COLOR,
+	ATTRIBFLAG_CONSTANTCOLOR = 1 << ATTRIB_CONSTANTCOLOR
 };
 
 /**
@@ -101,8 +111,8 @@ public:
 
 	struct
 	{
-		std::vector<Matrix> transform;
-		std::vector<Matrix> projection;
+		std::vector<Matrix4> transform;
+		std::vector<Matrix4> projection;
 	} matrices;
 
 	class TempTransform
@@ -120,7 +130,7 @@ public:
 			gl.popTransform();
 		}
 
-		Matrix &get()
+		Matrix4 &get()
 		{
 			return gl.getTransform();
 		}
@@ -181,7 +191,7 @@ public:
 
 	void pushTransform();
 	void popTransform();
-	Matrix &getTransform();
+	Matrix4 &getTransform();
 
 	/**
 	 * Set up necessary state (LOVE-provided shader uniforms, etc.) for drawing.
@@ -197,14 +207,13 @@ public:
 	void drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
 
 	/**
-	 * Sets the current constant color.
+	 * Sets the enabled vertex attribute arrays based on the specified attribute
+	 * bits. Each bit in the uint32 represents an enabled attribute array index.
+	 * For example, useVertexAttribArrays(1 << 0) will enable attribute index 0.
+	 * See the VertexAttribFlags enum for the standard vertex attributes.
+	 * This function *must* be used instead of glEnable/DisableVertexAttribArray.
 	 **/
-	void setColor(const Color &c);
-
-	/**
-	 * Gets the current constant color.
-	 **/
-	Color getColor() const;
+	void useVertexAttribArrays(uint32 arraybits);
 
 	/**
 	 * Sets the OpenGL rendering viewport to the specified rectangle.
@@ -237,6 +246,16 @@ public:
 	 * Gets the global point size.
 	 **/
 	float getPointSize() const;
+
+	/**
+	 * Calls glEnable/glDisable(GL_FRAMEBUFFER_SRGB).
+	 **/
+	void setFramebufferSRGB(bool enable);
+
+	/**
+	 * Equivalent to glIsEnabled(GL_FRAMEBUFFER_SRGB).
+	 **/
+	bool hasFramebufferSRGB() const;
 
 	/**
 	 * Binds a Framebuffer Object to the specified target.
@@ -346,24 +365,25 @@ private:
 	// Tracked OpenGL state.
 	struct
 	{
-		// Current constant color.
-		Color color;
-
 		// Texture unit state (currently bound texture for each texture unit.)
 		std::vector<GLuint> boundTextures;
 
 		// Currently active texture unit.
 		int curTextureUnit;
 
+		uint32 enabledAttribArrays;
+
 		Viewport viewport;
 		Viewport scissor;
 
 		float pointSize;
 
+		bool framebufferSRGBEnabled;
+
 		GLuint defaultTexture;
 
-		Matrix lastProjectionMatrix;
-		Matrix lastTransformMatrix;
+		Matrix4 lastProjectionMatrix;
+		Matrix4 lastTransformMatrix;
 
 	} state;
 

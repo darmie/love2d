@@ -37,7 +37,7 @@ int Image::imageCount = 0;
 
 float Image::maxMipmapSharpness = 0.0f;
 
-Texture::FilterMode Image::defaultMipmapFilter = Texture::FILTER_NEAREST;
+Texture::FilterMode Image::defaultMipmapFilter = Texture::FILTER_LINEAR;
 float Image::defaultMipmapSharpness = 0.0f;
 
 Image::Image(love::image::ImageData *data, const Flags &flags)
@@ -306,7 +306,7 @@ void Image::unloadVolatile()
 
 	gl.deleteTexture(texture);
 	texture = 0;
-	
+
 	gl.updateTextureMemorySize(textureMemorySize, 0);
 	textureMemorySize = 0;
 }
@@ -332,19 +332,26 @@ bool Image::refresh(int xoffset, int yoffset, int w, int h)
 		const image::pixel *pdata = (const image::pixel *) data->getData();
 		pdata += yoffset * data->getWidth() + xoffset;
 
+		GLenum format = GL_RGBA;
+
+		// In ES2, the format parameter of TexSubImage must match the internal
+		// format of the texture.
+		if (flags.sRGB && (GLAD_ES_VERSION_2_0 && !GLAD_ES_VERSION_3_0))
+			format = GL_SRGB_ALPHA;
+
 		{
 			thread::Lock lock(data->getMutex());
-			glTexSubImage2D(GL_TEXTURE_2D, 0, xoffset, yoffset, w, h, GL_RGBA,
+			glTexSubImage2D(GL_TEXTURE_2D, 0, xoffset, yoffset, w, h, format,
 			                GL_UNSIGNED_BYTE, pdata);
 		}
 
 		generateMipmaps();
 	}
-	
+
 	return true;
 }
 
-void Image::drawv(const Matrix &t, const Vertex *v)
+void Image::drawv(const Matrix4 &t, const Vertex *v)
 {
 	OpenGL::TempDebugGroup debuggroup("Image draw");
 
@@ -353,31 +360,25 @@ void Image::drawv(const Matrix &t, const Vertex *v)
 
 	gl.bindTexture(texture);
 
-	glEnableVertexAttribArray(ATTRIB_POS);
-	glEnableVertexAttribArray(ATTRIB_TEXCOORD);
+	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD);
 
 	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &v[0].x);
 	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &v[0].s);
 
 	gl.prepareDraw();
 	gl.drawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-	glDisableVertexAttribArray(ATTRIB_TEXCOORD);
-	glDisableVertexAttribArray(ATTRIB_POS);
 }
 
 void Image::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
 {
-	Matrix t;
-	t.setTransformation(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
 
 	drawv(t, vertices);
 }
 
 void Image::drawq(Quad *quad, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
 {
-	Matrix t;
-	t.setTransformation(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
 
 	drawv(t, quad->getVertices());
 }
@@ -586,7 +587,7 @@ GLenum Image::getCompressedFormat(image::CompressedImageData::Format cformat) co
 
 bool Image::hasAnisotropicFilteringSupport()
 {
-	return GLAD_EXT_texture_filter_anisotropic;
+	return GLAD_EXT_texture_filter_anisotropic != GL_FALSE;
 }
 
 bool Image::hasCompressedTextureSupport(image::CompressedImageData::Format format, bool sRGB)

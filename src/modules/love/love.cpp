@@ -56,6 +56,7 @@
 #endif
 
 // Scripts
+#include "scripts/nogame.lua.h"
 #include "scripts/boot.lua.h"
 
 // All modules define a c-accessible luaopen
@@ -114,6 +115,7 @@ extern "C"
 #if defined(LOVE_ENABLE_WINDOW)
 	extern int luaopen_love_window(lua_State*);
 #endif
+	extern int luaopen_love_nogame(lua_State*);
 	extern int luaopen_love_boot(lua_State*);
 }
 
@@ -169,6 +171,7 @@ static const luaL_Reg modules[] = {
 #if defined(LOVE_ENABLE_WINDOW)
 	{ "love.window", luaopen_love_window },
 #endif
+	{ "love.nogame", luaopen_love_nogame },
 	{ "love.boot", luaopen_love_boot },
 	{ 0, 0 }
 };
@@ -210,9 +213,9 @@ static int w_love_isVersionCompatible(lua_State *L)
 		version = luaL_checkstring(L, 1);
 	else
 	{
-		int major = luaL_checkint(L, 1);
-		int minor = luaL_checkint(L, 2);
-		int rev   = luaL_checkint(L, 3);
+		int major = (int) luaL_checknumber(L, 1);
+		int minor = (int) luaL_checknumber(L, 2);
+		int rev   = (int) luaL_checknumber(L, 3);
 
 		// Convert the numbers to a string, since VERSION_COMPATIBILITY is an
 		// array of version strings.
@@ -293,7 +296,7 @@ int luaopen_love(lua_State * L)
 	lua_setfield(L, -2, "_os");
 
 	// Preload module loaders.
-	for (int i = 0; modules[i].name != 0; i++)
+	for (int i = 0; modules[i].name != nullptr; i++)
 		love::luax_preload(L, modules[i].func, modules[i].name);
 
 #ifdef LOVE_ENABLE_LUASOCKET
@@ -394,6 +397,14 @@ int w__setAccelerometerAsJoystick(lua_State *L)
 	return 0;
 }
 #endif // LOVE_LEGENDARY_ACCELEROMETER_AS_JOYSTICK_HACK
+
+int luaopen_love_nogame(lua_State *L)
+{
+	if (luaL_loadbuffer(L, (const char *)love::nogame_lua, sizeof(love::nogame_lua), "nogame.lua") == 0)
+		lua_call(L, 0, 1);
+
+	return 1;
+}
 
 int luaopen_love_boot(lua_State *L)
 {

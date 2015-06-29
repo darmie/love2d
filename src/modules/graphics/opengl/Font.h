@@ -175,6 +175,8 @@ public:
 	bool hasGlyph(uint32 glyph) const;
 	bool hasGlyphs(const std::string &text) const;
 
+	void setFallbacks(const std::vector<Font *> &fallbacks);
+
 	uint32 getTextureCacheID() const;
 
 	static bool getConstant(const char *in, AlignMode &out);
@@ -209,9 +211,9 @@ private:
 	love::font::GlyphData *getRasterizerGlyphData(uint32 glyph);
 	const Glyph &addGlyph(uint32 glyph);
 	const Glyph &findGlyph(uint32 glyph);
-	void printv(const Matrix &t, const std::vector<DrawCommand> &drawcommands, const std::vector<GlyphVertex> &vertices);
+	void printv(const Matrix4 &t, const std::vector<DrawCommand> &drawcommands, const std::vector<GlyphVertex> &vertices);
 
-	StrongRef<love::font::Rasterizer> rasterizer;
+	std::vector<StrongRef<love::font::Rasterizer>> rasterizers;
 
 	int height;
 	float lineHeight;
@@ -234,7 +236,7 @@ private:
 	bool useSpacesAsTab;
 
 	// Index buffer used for drawing quads with GL_TRIANGLES.
-	VertexIndex quadIndices;
+	QuadIndices quadIndices;
 
 	// ID which is incremented when the texture cache is invalidated.
 	uint32 textureCacheID;

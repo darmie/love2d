@@ -36,7 +36,7 @@ int w_getDisplayCount(lua_State *L)
 
 int w_getDisplayName(lua_State *L)
 {
-	int index = luaL_checkint(L, 1) - 1;
+	int index = (int) luaL_checknumber(L, 1) - 1;
 
 	const char *name = nullptr;
 	luax_catchexcept(L, [&](){ name = instance()->getDisplayName(index); });
@@ -54,12 +54,12 @@ static const char *settingName(Window::Setting setting)
 
 int w_setMode(lua_State *L)
 {
-	int w = luaL_checkint(L, 1);
-	int h = luaL_checkint(L, 2);
+	int w = (int) luaL_checknumber(L, 1);
+	int h = (int) luaL_checknumber(L, 2);
 
 	if (lua_isnoneornil(L, 3))
 	{
-		luax_pushboolean(L, instance()->setWindow(w, h, 0));
+		luax_pushboolean(L, instance()->setWindow(w, h, nullptr));
 		return 1;
 	}
 
@@ -114,8 +114,8 @@ int w_setMode(lua_State *L)
 	settings.useposition = !(lua_isnoneornil(L, -2) && lua_isnoneornil(L, -1));
 	if (settings.useposition)
 	{
-		settings.x = luaL_optint(L, -2, 0);
-		settings.y = luaL_optint(L, -1, 0);
+		settings.x = (int) luaL_optnumber(L, -2, 0);
+		settings.y = (int) luaL_optnumber(L, -1, 0);
 	}
 	lua_pop(L, 2);
 
@@ -192,7 +192,14 @@ int w_getMode(lua_State *L)
 
 int w_getFullscreenModes(lua_State *L)
 {
-	int displayindex = luaL_optint(L, 1, 1) - 1;
+	int displayindex = 0;
+	if (!lua_isnoneornil(L, 1))
+		displayindex = (int) luaL_checknumber(L, 1);
+	else
+	{
+		int x, y;
+		instance()->getPosition(x, y, displayindex);
+	}
 
 	std::vector<Window::WindowSize> modes = instance()->getFullscreenSizes(displayindex);
 
@@ -200,7 +207,7 @@ int w_getFullscreenModes(lua_State *L)
 
 	for (size_t i = 0; i < modes.size(); i++)
 	{
-		lua_pushinteger(L, i+1);
+		lua_pushinteger(L, i + 1);
 		lua_createtable(L, 0, 2);
 
 		// Inner table attribs.
@@ -262,7 +269,14 @@ int w_isCreated(lua_State *L)
 int w_getDesktopDimensions(lua_State *L)
 {
 	int width = 0, height = 0;
-	int displayindex = luaL_optint(L, 1, 1) - 1;
+	int displayindex = 0;
+	if (!lua_isnoneornil(L, 1))
+		displayindex = (int) luaL_checknumber(L, 1);
+	else
+	{
+		int x, y;
+		instance()->getPosition(x, y, displayindex);
+	}
 	instance()->getDesktopDimensions(displayindex, width, height);
 	lua_pushinteger(L, width);
 	lua_pushinteger(L, height);
@@ -271,9 +285,18 @@ int w_getDesktopDimensions(lua_State *L)
 
 int w_setPosition(lua_State *L)
 {
-	int x = luaL_checkint(L, 1);
-	int y = luaL_checkint(L, 2);
-	int displayindex = luaL_optint(L, 3, 1) - 1;
+	int x = (int) luaL_checknumber(L, 1);
+	int y = (int) luaL_checknumber(L, 2);
+
+	int displayindex = 0;
+	if (!lua_isnoneornil(L, 3))
+		displayindex = (int) luaL_checknumber(L, 3);
+	else
+	{
+		int x_unused, y_unused;
+		instance()->getPosition(x_unused, y_unused, displayindex);
+	}
+
 	instance()->setPosition(x, y, displayindex);
 	return 0;
 }
@@ -407,7 +430,7 @@ int w_showMessageBox(lua_State *L)
 	// means we should use the more complex message box API.
 	if (lua_istable(L, 3))
 	{
-		size_t numbuttons = lua_objlen(L, 3);
+		size_t numbuttons = luax_objlen(L, 3);
 		if (numbuttons == 0)
 			return luaL_error(L, "Must have at least one messagebox button.");
 
@@ -422,7 +445,7 @@ int w_showMessageBox(lua_State *L)
 		// Optional table entry specifying the button to use when enter is pressed.
 		lua_getfield(L, 3, "enterbutton");
 		if (!lua_isnoneornil(L, -1))
-			data.enterButtonIndex = luaL_checkint(L, -1) - 1;
+			data.enterButtonIndex = (int) luaL_checknumber(L, -1) - 1;
 		else
 			data.enterButtonIndex = 0;
 		lua_pop(L, 1);
@@ -430,7 +453,7 @@ int w_showMessageBox(lua_State *L)
 		// Optional table entry specifying the button to use when esc is pressed.
 		lua_getfield(L, 3, "escapebutton");
 		if (!lua_isnoneornil(L, -1))
-			data.escapeButtonIndex = luaL_checkint(L, -1) - 1;
+			data.escapeButtonIndex = (int) luaL_checknumber(L, -1) - 1;
 		else
 			data.escapeButtonIndex = (int) data.buttons.size() - 1;
 		lua_pop(L, 1);
@@ -460,6 +483,13 @@ int w_showMessageBox(lua_State *L)
 	return 1;
 }
 
+int w_requestAttention(lua_State *L)
+{
+	bool continuous = luax_optboolean(L, 1, false);
+	instance()->requestAttention(continuous);
+	return 0;
+}
+
 static const luaL_Reg functions[] =
 {
 	{ "getDisplayCount", w_getDisplayCount },
@@ -486,6 +516,7 @@ static const luaL_Reg functions[] =
 	{ "minimize", w_minimize },
 	{ "maximize", w_maximize },
 	{ "showMessageBox", w_showMessageBox },
+	{ "requestAttention", w_requestAttention },
 	{ 0, 0 }
 };
 

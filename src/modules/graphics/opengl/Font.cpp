@@ -41,7 +41,7 @@ namespace opengl
 int Font::fontCount = 0;
 
 Font::Font(love::font::Rasterizer *r, const Texture::Filter &filter)
-	: rasterizer(r)
+	: rasterizers({r})
 	, height(r->getHeight())
 	, lineHeight(1)
 	, textureWidth(128)
@@ -201,7 +201,7 @@ love::font::GlyphData *Font::getRasterizerGlyphData(uint32 glyph)
 	// Use spaces for the tab 'glyph'.
 	if (glyph == 9 && useSpacesAsTab)
 	{
-		love::font::GlyphData *spacegd = rasterizer->getGlyphData(32);
+		love::font::GlyphData *spacegd = rasterizers[0]->getGlyphData(32);
 		love::font::GlyphData::Format fmt = spacegd->getFormat();
 
 		love::font::GlyphMetrics gm = {};
@@ -214,7 +214,13 @@ love::font::GlyphData *Font::getRasterizerGlyphData(uint32 glyph)
 		return new love::font::GlyphData(glyph, gm, fmt);
 	}
 
-	return rasterizer->getGlyphData(glyph);
+	for (const StrongRef<love::font::Rasterizer> &r : rasterizers)
+	{
+		if (r->hasGlyph(glyph))
+			return r->getGlyphData(glyph);
+	}
+
+	return rasterizers[0]->getGlyphData(glyph);
 }
 
 const Font::Glyph &Font::addGlyph(uint32 glyph)
@@ -526,7 +532,7 @@ void Font::drawVertices(const std::vector<DrawCommand> &drawcommands)
 		totalverts = std::max(cmd.startvertex + cmd.vertexcount, totalverts);
 
 	if ((size_t) totalverts / 4 > quadIndices.getSize())
-		quadIndices = VertexIndex((size_t) totalverts / 4);
+		quadIndices = QuadIndices((size_t) totalverts / 4);
 
 	gl.prepareDraw();
 
@@ -548,7 +554,7 @@ void Font::drawVertices(const std::vector<DrawCommand> &drawcommands)
 	}
 }
 
-void Font::printv(const Matrix &t, const std::vector<DrawCommand> &drawcommands, const std::vector<GlyphVertex> &vertices)
+void Font::printv(const Matrix4 &t, const std::vector<DrawCommand> &drawcommands, const std::vector<GlyphVertex> &vertices)
 {
 	if (vertices.empty() || drawcommands.empty())
 		return;
@@ -558,25 +564,12 @@ void Font::printv(const Matrix &t, const std::vector<DrawCommand> &drawcommands,
 	OpenGL::TempTransform transform(gl);
 	transform.get() *= t;
 
-	glEnableVertexAttribArray(ATTRIB_POS);
-	glEnableVertexAttribArray(ATTRIB_TEXCOORD);
+	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD);
 
 	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(GlyphVertex), &vertices[0].x);
 	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(GlyphVertex), &vertices[0].s);
 
-	try
-	{
-		drawVertices(drawcommands);
-	}
-	catch (love::Exception &)
-	{
-		glDisableVertexAttribArray(ATTRIB_TEXCOORD);
-		glDisableVertexAttribArray(ATTRIB_POS);
-		throw;
-	}
-
-	glDisableVertexAttribArray(ATTRIB_TEXCOORD);
-	glDisableVertexAttribArray(ATTRIB_POS);
+	drawVertices(drawcommands);
 }
 
 void Font::print(const std::string &text, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
@@ -584,8 +577,7 @@ void Font::print(const std::string &text, float x, float y, float angle, float s
 	std::vector<GlyphVertex> vertices;
 	std::vector<DrawCommand> drawcommands = generateVertices(text, vertices);
 
-	Matrix t;
-	t.setTransformation(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 t(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
 
 	printv(t, drawcommands, vertices);
 }
@@ -595,8 +587,7 @@ void Font::printf(const std::string &text, float x, float y, float wrap, AlignMo
 	std::vector<GlyphVertex> vertices;
 	std::vector<DrawCommand> drawcommands = generateVerticesFormatted(text, wrap, align, vertices);
 
-	Matrix t;
-	t.setTransformation(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 t(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
 
 	printv(t, drawcommands, vertices);
 }
@@ -757,12 +748,12 @@ void Font::unloadVolatile()
 
 int Font::getAscent() const
 {
-	return rasterizer->getAscent();
+	return rasterizers[0]->getAscent();
 }
 
 int Font::getDescent() const
 {
-	return rasterizer->getDescent();
+	return rasterizers[0]->getDescent();
 }
 
 float Font::getBaseline() const
@@ -773,12 +764,54 @@ float Font::getBaseline() const
 
 bool Font::hasGlyph(uint32 glyph) const
 {
-	return rasterizer->hasGlyph(glyph);
+	for (const StrongRef<love::font::Rasterizer> &r : rasterizers)
+	{
+		if (r->hasGlyph(glyph))
+			return true;
+	}
+
+	return false;
 }
 
 bool Font::hasGlyphs(const std::string &text) const
 {
-	return rasterizer->hasGlyphs(text);
+	if (text.size() == 0)
+		return false;
+
+	try
+	{
+		utf8::iterator<std::string::const_iterator> i(text.begin(), text.begin(), text.end());
+		utf8::iterator<std::string::const_iterator> end(text.end(), text.begin(), text.end());
+
+		while (i != end)
+		{
+			uint32 codepoint = *i++;
+
+			if (!hasGlyph(codepoint))
+				return false;
+		}
+	}
+	catch (utf8::exception &e)
+	{
+		throw love::Exception("UTF-8 decoding error: %s", e.what());
+	}
+
+	return true;
+}
+
+void Font::setFallbacks(const std::vector<Font *> &fallbacks)
+{
+	for (const Font *f : fallbacks)
+	{
+		if (f->type != this->type)
+			throw love::Exception("Font fallbacks must be of the same font type.");
+	}
+
+	rasterizers.resize(1);
+
+	// NOTE: this won't invalidate already-rasterized glyphs.
+	for (const Font *f : fallbacks)
+		rasterizers.push_back(f->rasterizers[0]);
 }
 
 uint32 Font::getTextureCacheID() const

@@ -37,7 +37,7 @@
 #include <SDL_video.h>
 
 #ifdef LOVE_IOS
-#include <SDL_system.h>
+#include <SDL_syswm.h>
 #endif
 
 namespace love
@@ -86,9 +86,14 @@ void OpenGL::setupContext()
 
 	initMaxValues();
 
-	state.color = Color(255, 255, 255, 255);
 	GLfloat glcolor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 	glVertexAttrib4fv(ATTRIB_COLOR, glcolor);
+	glVertexAttrib4fv(ATTRIB_CONSTANTCOLOR, glcolor);
+
+	GLint maxvertexattribs = 1;
+	glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &maxvertexattribs);
+	state.enabledAttribArrays = 1u << uint32(maxvertexattribs - 1);
+	useVertexAttribArrays(0);
 
 	// Get the current viewport.
 	glGetIntegerv(GL_VIEWPORT, (GLint *) &state.viewport.x);
@@ -102,6 +107,14 @@ void OpenGL::setupContext()
 		glGetFloatv(GL_POINT_SIZE, &state.pointSize);
 	else
 		state.pointSize = 1.0f;
+
+	if (GLAD_VERSION_3_0 || GLAD_ARB_framebuffer_sRGB || GLAD_EXT_framebuffer_sRGB
+		|| GLAD_EXT_sRGB_write_control)
+	{
+		state.framebufferSRGBEnabled = (glIsEnabled(GL_FRAMEBUFFER_SRGB) == GL_TRUE);
+	}
+	else
+		state.framebufferSRGBEnabled = false;
 
 	// Initialize multiple texture unit support for shaders.
 	state.boundTextures.clear();
@@ -261,8 +274,8 @@ void OpenGL::initMatrices()
 	matrices.transform.clear();
 	matrices.projection.clear();
 
-	matrices.transform.push_back(Matrix());
-	matrices.projection.push_back(Matrix());
+	matrices.transform.push_back(Matrix4());
+	matrices.projection.push_back(Matrix4());
 }
 
 void OpenGL::createDefaultTexture()
@@ -299,7 +312,7 @@ void OpenGL::popTransform()
 	matrices.transform.pop_back();
 }
 
-Matrix &OpenGL::getTransform()
+Matrix4 &OpenGL::getTransform()
 {
 	return matrices.transform.back();
 }
@@ -308,32 +321,19 @@ void OpenGL::prepareDraw()
 {
 	TempDebugGroup debuggroup("Prepare OpenGL draw");
 
-	Shader *shader = Shader::current;
-	if (shader != nullptr)
+	// Make sure the active shader's love-provided uniforms are up to date.
+	if (Shader::current != nullptr)
+		Shader::current->checkSetBuiltinUniforms();
+
+	// We use glLoadMatrix rather than uniforms for our matrices when possible,
+	// because uniform uploads can be significantly slower than glLoadMatrix.
+	if (GLAD_VERSION_1_0)
 	{
-		// Make sure the active shader has the correct values for its
-		// love-provided uniforms.
-		shader->checkSetScreenParams();
-	}
+		const Matrix4 &curproj = matrices.projection.back();
+		const Matrix4 &curxform = matrices.transform.back();
 
-	const Matrix &curproj = matrices.projection.back();
-	const Matrix &curxform = matrices.transform.back();
-
-	if (GLAD_ES_VERSION_2_0 && shader)
-	{
-		// Send built-in uniforms to the current shader.
-		shader->sendBuiltinMatrix(Shader::BUILTIN_TRANSFORM_MATRIX, 4, curxform.getElements(), 1);
-		shader->sendBuiltinMatrix(Shader::BUILTIN_PROJECTION_MATRIX, 4, curproj.getElements(), 1);
-
-		Matrix tp_matrix(curproj * curxform);
-		shader->sendBuiltinMatrix(Shader::BUILTIN_TRANSFORM_PROJECTION_MATRIX, 4, tp_matrix.getElements(), 1);
-
-		shader->checkSetPointSize(state.pointSize);
-	}
-	else if (GLAD_VERSION_1_0)
-	{
-		const Matrix &lastproj = state.lastProjectionMatrix;
-		const Matrix &lastxform = state.lastTransformMatrix;
+		const Matrix4 &lastproj = state.lastProjectionMatrix;
+		const Matrix4 &lastxform = state.lastTransformMatrix;
 
 		// We only need to re-upload the projection matrix if it's changed.
 		if (memcmp(curproj.getElements(), lastproj.getElements(), sizeof(float) * 16) != 0)
@@ -366,17 +366,36 @@ void OpenGL::drawElements(GLenum mode, GLsizei count, GLenum type, const void *i
 	++stats.drawCalls;
 }
 
-void OpenGL::setColor(const Color &c)
+void OpenGL::useVertexAttribArrays(uint32 arraybits)
 {
-	GLfloat glc[] = {c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f};
-	glVertexAttrib4fv(ATTRIB_COLOR, glc);
+	uint32 diff = arraybits ^ state.enabledAttribArrays;
 
-	state.color = c;
-}
+	if (diff == 0)
+		return;
 
-Color OpenGL::getColor() const
-{
-	return state.color;
+	// Max 32 attributes. As of when this was written, no GL driver exposes more
+	// than 32. Lets hope that doesn't change...
+	for (uint32 i = 0; i < 32; i++)
+	{
+		uint32 bit = 1 << i;
+
+		if (diff & bit)
+		{
+			if (arraybits & bit)
+				glEnableVertexAttribArray(i);
+			else
+				glDisableVertexAttribArray(i);
+		}
+	}
+
+	state.enabledAttribArrays = arraybits;
+
+	// glDisableVertexAttribArray will make the constant value for a vertex
+	// attribute undefined. We rely on the per-vertex color attribte being white
+	// when no per-vertex color is used, so we set it here.
+	// FIXME: Is there a better place to do this?
+	if ((diff & ATTRIBFLAG_COLOR) && !(arraybits & ATTRIBFLAG_COLOR))
+		glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 void OpenGL::setViewport(const OpenGL::Viewport &v)
@@ -427,6 +446,21 @@ float OpenGL::getPointSize() const
 	return state.pointSize;
 }
 
+void OpenGL::setFramebufferSRGB(bool enable)
+{
+	if (enable)
+		glEnable(GL_FRAMEBUFFER_SRGB);
+	else
+		glDisable(GL_FRAMEBUFFER_SRGB);
+
+	state.framebufferSRGBEnabled = enable;
+}
+
+bool OpenGL::hasFramebufferSRGB() const
+{
+	return state.framebufferSRGBEnabled;
+}
+
 void OpenGL::bindFramebuffer(GLenum target, GLuint framebuffer)
 {
 	glBindFramebuffer(target, framebuffer);
@@ -439,7 +473,10 @@ GLuint OpenGL::getDefaultFBO() const
 {
 #ifdef LOVE_IOS
 	// Hack: iOS uses a custom FBO.
-	return SDL_iPhoneGetViewFramebuffer(SDL_GL_GetCurrentWindow());
+	SDL_SysWMinfo info = {};
+	SDL_VERSION(&info.version);
+	SDL_GetWindowWMInfo(SDL_GL_GetCurrentWindow(), &info);
+	return info.info.uikit.framebuffer;
 #else
 	return 0;
 #endif

@@ -52,6 +52,7 @@ public:
 	// Implements Drawable.
 	virtual void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
 
+	void setFont(Font *f);
 	Font *getFont() const;
 
 	/**
@@ -73,7 +74,7 @@ private:
 		Font::AlignMode align;
 		bool use_matrix;
 		bool append_vertices;
-		Matrix matrix;
+		Matrix4 matrix;
 	};
 
 	void uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t vertoffset);

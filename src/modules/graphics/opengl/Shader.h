@@ -61,6 +61,7 @@ public:
 		BUILTIN_TRANSFORM_MATRIX = 0,
 		BUILTIN_PROJECTION_MATRIX,
 		BUILTIN_TRANSFORM_PROJECTION_MATRIX,
+		BUILTIN_NORMAL_MATRIX,
 		BUILTIN_POINT_SIZE,
 		BUILTIN_SCREEN_SIZE,
 		BUILTIN_MAX_ENUM
@@ -174,15 +175,16 @@ public:
 	 **/
 	UniformType getExternVariable(const std::string &name, int &components, int &count);
 
+	GLint getAttribLocation(const std::string &name);
+
 	/**
 	 * Internal use only.
 	 **/
 	bool hasVertexAttrib(VertexAttribID attrib) const;
-	bool hasBuiltinUniform(BuiltinUniform builtin) const;
-	bool sendBuiltinMatrix(BuiltinUniform builtin, int size, const GLfloat *m, int count);
-	bool sendBuiltinFloat(BuiltinUniform builtin, int size, const GLfloat *m, int count);
+
 	void checkSetScreenParams();
 	void checkSetPointSize(float size);
+	void checkSetBuiltinUniforms();
 
 	const std::map<std::string, Object *> &getBoundRetainables() const;
 
@@ -191,6 +193,9 @@ public:
 
 	static bool getConstant(const char *in, UniformType &out);
 	static bool getConstant(UniformType in, const char *&out);
+
+	static bool getConstant(const char *in, VertexAttribID &out);
+	static bool getConstant(VertexAttribID in, const char *&out);
 
 private:
 
@@ -237,6 +242,8 @@ private:
 	// Location values for any generic vertex attribute variables.
 	GLint builtinAttributes[ATTRIB_MAX_ENUM];
 
+	std::map<std::string, GLint> attributes;
+
 	// Uniform location buffer map
 	std::map<std::string, Uniform> uniforms;
 
@@ -252,6 +259,9 @@ private:
 	OpenGL::Viewport lastViewport;
 
 	float lastPointSize;
+
+	Matrix4 lastTransformMatrix;
+	Matrix4 lastProjectionMatrix;
 
 	// Counts total number of textures bound to each texture unit in all shaders
 	static std::vector<int> textureCounters;

@@ -23,7 +23,6 @@
 
 // LOVE
 #include "common/config.h"
-#include "common/runtime.h"
 #include "common/Module.h"
 #include "common/int.h"
 #include "FileData.h"
@@ -208,7 +207,7 @@ public:
 	 * This "native" method returns a table of all
 	 * files in a given directory.
 	 **/
-	virtual int getDirectoryItems(lua_State *L) = 0;
+	virtual void getDirectoryItems(const char *dir, std::vector<std::string> &items) = 0;
 
 	/**
 	 * Gets the last modification time of a file, in seconds
@@ -252,6 +251,11 @@ public:
 	 * Gets whether the given full (OS-dependent) path is a directory.
 	 **/
 	virtual bool isRealDirectory(const std::string &path) const;
+
+	/**
+	 * Gets the full platform-dependent path to the executable.
+	 **/
+	virtual std::string getExecutablePath() const;
 
 }; // Filesystem
 

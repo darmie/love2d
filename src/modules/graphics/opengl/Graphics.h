@@ -167,7 +167,7 @@ public:
 	 **/
 	Font *newFont(love::font::Rasterizer *data, const Texture::Filter &filter = Texture::getDefaultFilter());
 
-	SpriteBatch *newSpriteBatch(Texture *texture, int size, int usage);
+	SpriteBatch *newSpriteBatch(Texture *texture, int size, Mesh::Usage usage);
 
 	ParticleSystem *newParticleSystem(Texture *texture, int size);
 
@@ -175,8 +175,11 @@ public:
 
 	Shader *newShader(const Shader::ShaderSource &source);
 
-	Mesh *newMesh(const std::vector<Vertex> &vertices, Mesh::DrawMode mode = Mesh::DRAW_MODE_FAN);
-	Mesh *newMesh(int vertexcount, Mesh::DrawMode mode = Mesh::DRAW_MODE_FAN);
+	Mesh *newMesh(const std::vector<Vertex> &vertices, Mesh::DrawMode drawmode, Mesh::Usage usage);
+	Mesh *newMesh(int vertexcount, Mesh::DrawMode drawmode, Mesh::Usage usage);
+
+	Mesh *newMesh(const std::vector<Mesh::AttribFormat> &vertexformat, int vertexcount, Mesh::DrawMode drawmode, Mesh::Usage usage);
+	Mesh *newMesh(const std::vector<Mesh::AttribFormat> &vertexformat, const void *data, size_t datasize, Mesh::DrawMode drawmode, Mesh::Usage usage);
 
 	Text *newText(Font *font, const std::string &text = "");
 
@@ -184,7 +187,7 @@ public:
 	 * Sets the foreground color.
 	 * @param c The new foreground color.
 	 **/
-	void setColor(const Color &c);
+	void setColor(Color c);
 
 	/**
 	 * Gets current color.
@@ -194,7 +197,7 @@ public:
 	/**
 	 * Sets the background Color.
 	 **/
-	void setBackgroundColor(const Color &c);
+	void setBackgroundColor(Color c);
 
 	/**
 	 * Gets the current background color.
@@ -229,12 +232,12 @@ public:
 	/**
 	 * Sets the current blend mode.
 	 **/
-	void setBlendMode(BlendMode mode);
+	void setBlendMode(BlendMode mode, bool multiplyalpha);
 
 	/**
 	 * Gets the current blend mode.
 	 **/
-	BlendMode getBlendMode() const;
+	BlendMode getBlendMode(bool &multiplyalpha) const;
 
 	/**
 	 * Sets the default filter for images, canvases, and fonts.
@@ -365,6 +368,19 @@ public:
 	void rectangle(DrawMode mode, float x, float y, float w, float h);
 
 	/**
+	 * Variant of rectangle that draws a rounded rectangle.
+	 * @param mode The mode of drawing (line/filled).
+	 * @param x X-coordinate of top-left corner
+	 * @param y Y-coordinate of top-left corner
+	 * @param w The width of the rectangle.
+	 * @param h The height of the rectangle.
+	 * @param rx The radius of the corners on the x axis
+	 * @param ry The radius of the corners on the y axis
+	 * @param points The number of points to use per corner
+	 **/
+	void rectangle(DrawMode mode, float x, float y, float w, float h, float rx, float ry, int points = 10);
+
+	/**
 	 * Draws a circle using the specified arguments.
 	 * @param mode The mode of drawing (line/filled).
 	 * @param x X-coordinate.
@@ -373,6 +389,17 @@ public:
 	 * @param points Number of points to use to draw the circle.
 	 **/
 	void circle(DrawMode mode, float x, float y, float radius, int points = 10);
+
+	/**
+	 * Draws an ellipse using the specified arguments.
+	 * @param mode The mode of drawing (line/filled).
+	 * @param x X-coordinate of center
+	 * @param y Y-coordinate of center
+	 * @param a Radius in x-direction
+	 * @param b Radius in y-direction
+	 * @param points Number of points to use to draw the circle.
+	 **/
+	void ellipse(DrawMode mode, float x, float y, float a, float b, int points = 10);
 
 	/**
 	 * Draws an arc using the specified arguments.
@@ -440,6 +467,7 @@ private:
 		Color backgroundColor;
 
 		BlendMode blendMode;
+		bool blendMultiplyAlpha;
 
 		float lineWidth;
 		LineStyle lineStyle;
@@ -484,7 +512,9 @@ private:
 
 	StrongRef<Font> defaultFont;
 
-	std::vector<double> pixel_size_stack; // stores current size of a pixel (needed for line drawing)
+	std::vector<double> pixelSizeStack; // stores current size of a pixel (needed for line drawing)
+
+	QuadIndices *quadIndices;
 
 	int width;
 	int height;

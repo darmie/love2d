@@ -48,25 +48,13 @@ class GLBuffer : public Volatile
 public:
 
 	/**
-	 * Create a new GLBuffer.
-	 *
-	 * @param size The size of the GLBuffer (in bytes).
-	 * @param target GL_ARRAY_BUFFER, GL_ELEMENT_ARRAY_BUFFER.
-	 * @param usage GL_DYNAMIC_DRAW, etc.
-	 * @param backing Determines what guarantees are placed on the data.
-	 * @return A new GLBuffer.
-	 */
-	static GLBuffer *Create(size_t size, GLenum target, GLenum usage);
-
-	/**
 	 * Constructor.
 	 *
 	 * @param size The size of the GLBuffer in bytes.
 	 * @param target The target GLBuffer object, e.g. GL_ARRAY_BUFFER.
 	 * @param usage Usage hint, e.g. GL_DYNAMIC_DRAW.
-	 * @param backing Determines what guarantees are placed on the data.
 	 */
-	GLBuffer(size_t size, GLenum target, GLenum usage);
+	GLBuffer(size_t size, const void *data, GLenum target, GLenum usage);
 
 	/**
 	 * Destructor.
@@ -123,7 +111,7 @@ public:
 	 *
 	 * @return A pointer to memory which represents the buffer.
 	 */
-	virtual void *map();
+	void *map();
 
 	/**
 	 * Unmap a previously mapped GLBuffer. The buffer must be unmapped
@@ -135,18 +123,18 @@ public:
 	 *                   sub-range of data modified. Optional.
 	 * @param usedSize   The size of the sub-range of modified data. Optional.
 	 */
-	virtual void unmap(size_t usedOffset = 0, size_t usedSize = -1);
+	void unmap(size_t usedOffset = 0, size_t usedSize = -1);
 
 	/**
 	 * Bind the GLBuffer to its specified target.
 	 * (GL_ARRAY_BUFFER, GL_ELEMENT_ARRAY_BUFFER, etc).
 	 */
-	virtual void bind();
+	void bind();
 
 	/**
 	 * Unbind a prevously bound GLBuffer.
 	 */
-	virtual void unbind();
+	void unbind();
 
 	/**
 	 * Fill a portion of the buffer with data.
@@ -157,7 +145,7 @@ public:
 	 * @param size The size of the incoming data.
 	 * @param data Pointer to memory to copy data from.
 	 */
-	virtual void fill(size_t offset, size_t size, const void *data);
+	void fill(size_t offset, size_t size, const void *data);
 
 	/**
 	 * Get a pointer which represents the specified byte offset.
@@ -165,11 +153,11 @@ public:
 	 * @param offset The byte offset. (0 is first byte).
 	 * @return A pointer which represents the offset.
 	 */
-	virtual const void *getPointer(size_t offset) const;
+	const void *getPointer(size_t offset) const;
 
 	// Implements Volatile.
-	virtual bool loadVolatile();
-	virtual void unloadVolatile();
+	bool loadVolatile() override;
+	void unloadVolatile() override;
 
 	/**
 	 * This helper class can bind a GLBuffer temporarily, and
@@ -278,7 +266,7 @@ private:
 
 
 /**
- * VertexIndex manages one shared GLBuffer that stores the indices for an
+ * QuadIndices manages one shared GLBuffer that stores the indices for an
  * element array. Vertex arrays using the vertex structure (or anything else
  * that can use the pattern below) can request a size and use it for the
  * drawElements call.
@@ -292,14 +280,14 @@ private:
  *  indices[i*6 + 5] = i*4 + 3;
  *
  * There will always be a large enough GLBuffer around until all
- * VertexIndex instances have been deleted.
+ * QuadIndices instances have been deleted.
  *
- * Q: Why have something like VertexIndex?
+ * Q: Why have something like QuadIndices?
  * A: The indices for the SpriteBatch do not change, only the array size
  * varies. Using one GLBuffer for all element arrays removes this
  * duplicated data and saves some memory.
  */
-class VertexIndex
+class QuadIndices
 {
 public:
 	/**
@@ -309,16 +297,16 @@ public:
 	 *
 	 * @param size The requested size in groups of 6 indices.
 	 */
-	VertexIndex(size_t size);
+	QuadIndices(size_t size);
 
-	VertexIndex(const VertexIndex &other);
-	VertexIndex &operator = (const VertexIndex &other);
+	QuadIndices(const QuadIndices &other);
+	QuadIndices &operator = (const QuadIndices &other);
 
 	/**
 	 * Removes an entry from the list of sizes and resizes the GLBuffer
 	 * if needed.
 	 */
-	~VertexIndex();
+	~QuadIndices();
 
 	/**
 	 * Returns the number of index groups.
@@ -330,8 +318,8 @@ public:
 
 	/**
 	 * Returns the number of indices that the passed element count will have.
-	 * Use VertexIndex::getSize to get the full index count for that
-	 * VertexIndex instance.
+	 * Use QuadIndices::getSize to get the full index count for that
+	 * QuadIndices instance.
 	 *
 	 * @param elements The number of elements to calculate the index count for.
 	 * @return The index count.
@@ -382,30 +370,6 @@ public:
 private:
 
 	/**
-	 * Adds a new size to the size list, then sorts and resizes it if needed.
-	 *
-	 * @param newSize The new size to be added.
-	 */
-	void addSize(size_t newSize);
-
-	/**
-	 * Removes a size from the size list, then sorts and resizes it if needed.
-	 *
-	 * @param oldSize The old size to be removed.
-	 */
-	void removeSize(size_t oldSize);
-
-	/**
-	 * Resizes the GLBuffer to the requested size.
-	 * This function takes care of choosing the correct integer type and
-	 * allocating and deleting the GLBuffer instance. It also has some
-	 * fallback logic in case the memory ran out.
-	 *
-	 * @param size The requested GLBuffer size. Passing 0 deletes the GLBuffer without allocating a new one.
-	 */
-	void resize(size_t size);
-
-	/**
 	 * Adds all indices to the array with the type T.
 	 * There are no checks for the correct types or overflows. The calling
 	 * function should check for that.
@@ -417,12 +381,14 @@ private:
 
 	// The size in bytes of an element in the element array.
 	static size_t elementSize;
+
 	// The current GLBuffer size. 0 means no GLBuffer.
 	static size_t maxSize;
-	// The list of sizes. Needs to be kept sorted in ascending order.
-	static std::list<size_t> sizeRefs;
-	// The GLBuffer for the element array. Can be NULL.
-	static GLBuffer *element_array;
+
+	static size_t objectCount;
+
+	// The GLBuffer for the element array. Can be null.
+	static GLBuffer *indexBuffer;
 };
 
 } // opengl

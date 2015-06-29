@@ -38,7 +38,7 @@ namespace love
 {
 namespace filesystem
 {
-	
+
 #define instance() (Module::getInstance<Filesystem>(Module::M_FILESYSTEM))
 
 bool hack_setupWriteDirectory()
@@ -186,7 +186,7 @@ FileData *luax_getfiledata(lua_State *L, int idx)
 	{
 		luax_catchexcept(L,
 			[&]() { data = file->read(); },
-			[&]() { file->release(); }
+			[&](bool) { file->release(); }
 		);
 	}
 
@@ -301,6 +301,12 @@ int w_getRealDirectory(lua_State *L)
 	return 1;
 }
 
+int w_getExecutablePath(lua_State *L)
+{
+	luax_pushstring(L, instance()->getExecutablePath());
+	return 1;
+}
+
 int w_isDirectory(lua_State *L)
 {
 	const char *arg = luaL_checkstring(L, 1);
@@ -408,7 +414,21 @@ int w_append(lua_State *L)
 
 int w_getDirectoryItems(lua_State *L)
 {
-	return instance()->getDirectoryItems(L);
+	const char *dir = luaL_checkstring(L, 1);
+	std::vector<std::string> items;
+
+	instance()->getDirectoryItems(dir, items);
+
+	lua_createtable(L, (int) items.size(), 0);
+
+	for (int i = 0; i < (int) items.size(); i++)
+	{
+		lua_pushstring(L, items[i].c_str());
+		lua_rawseti(L, -2, i + 1);
+	}
+
+	// Return the table.
+	return 1;
 }
 
 int w_lines(lua_State *L)
@@ -685,6 +705,7 @@ static const luaL_Reg functions[] =
 	{ "getSaveDirectory", w_getSaveDirectory },
 	{ "getSourceBaseDirectory", w_getSourceBaseDirectory },
 	{ "getRealDirectory", w_getRealDirectory },
+	{ "getExecutablePath", w_getExecutablePath },
 	{ "isDirectory", w_isDirectory },
 	{ "isFile", w_isFile },
 	{ "createDirectory", w_createDirectory },

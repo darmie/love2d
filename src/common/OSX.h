@@ -45,6 +45,16 @@ std::string getLoveInResources();
  **/
 std::string checkDropEvents();
 
+/**
+ * Returns the full path to the executable.
+ **/
+std::string getExecutablePath();
+
+/**
+ * Bounce the dock icon, if the app isn't in the foreground.
+ **/
+void requestAttention(bool continuous);
+
 } // osx
 } // love
 

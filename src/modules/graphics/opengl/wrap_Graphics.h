@@ -61,7 +61,7 @@ int w_newFont(lua_State *L);
 int w_newImageFont(lua_State *L);
 int w_newSpriteBatch(lua_State *L);
 int w_newParticleSystem(lua_State *L);
-int w_newCanvas(lua_State *L);  // comments in function
+int w_newCanvas(lua_State *L);
 int w_newShader(lua_State *L);
 int w_newMesh(lua_State *L);
 int w_newText(lua_State *L);
@@ -109,6 +109,7 @@ int w_point(lua_State *L);
 int w_line(lua_State *L);
 int w_rectangle(lua_State *L);
 int w_circle(lua_State *L);
+int w_ellipse(lua_State *L);
 int w_arc(lua_State *L);
 int w_polygon(lua_State *L);
 int w_push(lua_State *L);

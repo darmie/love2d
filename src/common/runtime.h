@@ -51,7 +51,7 @@ enum Registry
 {
 	REGISTRY_GC,
 	REGISTRY_MODULES,
-	REGISTRY_TYPES
+	REGISTRY_OBJECTS
 };
 
 /**
@@ -223,6 +223,13 @@ int luax_assert_nilerror(lua_State *L, int idx);
 void luax_setfuncs(lua_State *L, const luaL_Reg *l);
 
 /**
+ * Loads a Lua module using the 'require' function. Leaves the return result on
+ * the stack.
+ * @param name The name of the module to require.
+ **/
+int luax_require(lua_State *L, const char *name);
+
+/**
  * Register a module in the love table. The love table will be created if it does not exist.
  * NOTE: The module-object is expected to have a +1 reference count before calling
  * this function, as it doesn't retain the object itself but Lua will release it
@@ -242,8 +249,9 @@ int luax_preload(lua_State *L, lua_CFunction f, const char *name);
  * Register a new type.
  * @param type The type.
  * @param f The list of member functions for the type.
+ * @param pushmetatable Whether to push the type's metatable to the stack.
  **/
-int luax_register_type(lua_State *L, love::Type type, const luaL_Reg *f = 0);
+int luax_register_type(lua_State *L, love::Type type, const luaL_Reg *f = nullptr, bool pushmetatable = false);
 
 /**
  * Do a table.insert from C
@@ -268,7 +276,6 @@ int luax_register_searcher(lua_State *L, lua_CFunction f, int pos = -1);
  * storing the Lua representation in a weak table if it doesn't exist yet.
  * NOTE: The object will be retained by Lua and released upon garbage collection.
  * @param L The Lua state.
- * @param name The name of the type. This must match the name used with luax_register_type.
  * @param type The type information of the object.
  * @param object The pointer to the actual object.
  **/
@@ -282,7 +289,6 @@ void luax_pushtype(lua_State *L, const love::Type type, love::Object *object);
  * Lua-side objects from working in some cases when used as keys in tables.
  * NOTE: The object will be retained by Lua and released upon garbage collection.
  * @param L The Lua state.
- * @param name The name of the type. This must match the name used with luax_register_type.
  * @param type The type information of the object.
  * @param object The pointer to the actual object.
  **/
@@ -389,11 +395,20 @@ extern "C" { // Also called from luasocket
 }
 
 /**
+ * Calls luax_objlen/lua_rawlen depending on version
+ **/
+size_t luax_objlen(lua_State *L, int ndx);
+
+extern "C" { // Called by enet and luasocket
+	void luax_register(lua_State *L, const char *name, const luaL_Reg *l);
+	int luax_c_insistglobal(lua_State *L, const char *k);
+}
+
+/**
  * Like luax_totype, but causes an error if the value at idx is not Proxy,
  * or is not the specified type.
  * @param L The Lua state.
  * @param idx The index on the stack.
- * @param name The name of the type.
  * @param type The type bit.
  **/
 template <typename T>
@@ -459,9 +474,9 @@ T *luax_optmodule(lua_State *L, love::Type type)
 
 	if (!typeFlags[u->type][type])
 		luaL_error(L, "Incorrect module %s", name);
-	
+
 	lua_pop(L, 2);
-	
+
 	return (T *) u->object;
 }
 
@@ -506,7 +521,6 @@ int luax_catchexcept(lua_State *L, const T& func)
 		return luaL_error(L, "%s", lua_tostring(L, -1));
 
 	return 0;
-
 }
 
 template <typename T, typename F>
@@ -524,13 +538,12 @@ int luax_catchexcept(lua_State *L, const T& func, const F& finallyfunc)
 		lua_pushstring(L, e.what());
 	}
 
-	finallyfunc();
+	finallyfunc(should_error);
 
 	if (should_error)
 		return luaL_error(L, "%s", lua_tostring(L, -1));
-	
+
 	return 0;
-	
 }
 
 } // love

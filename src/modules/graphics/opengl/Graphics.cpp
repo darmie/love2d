@@ -39,7 +39,7 @@
 #include <cstdio>
 
 #ifdef LOVE_IOS
-#include <SDL_system.h>
+#include <SDL_syswm.h>
 #endif
 
 namespace love
@@ -50,7 +50,8 @@ namespace opengl
 {
 
 Graphics::Graphics()
-	: width(0)
+	: quadIndices(nullptr)
+	, width(0)
 	, height(0)
 	, created(false)
 	, active(true)
@@ -84,6 +85,9 @@ Graphics::~Graphics()
 		Shader::defaultShader = nullptr;
 	}
 
+	if (quadIndices)
+		delete quadIndices;
+
 	currentWindow->release();
 }
 
@@ -97,7 +101,7 @@ void Graphics::restoreState(const DisplayState &s)
 	setColor(s.color);
 	setBackgroundColor(s.backgroundColor);
 
-	setBlendMode(s.blendMode);
+	setBlendMode(s.blendMode, s.blendMultiplyAlpha);
 
 	setLineWidth(s.lineWidth);
 	setLineStyle(s.lineStyle);
@@ -133,8 +137,8 @@ void Graphics::restoreStateChecked(const DisplayState &s)
 	if (*(uint32 *) &s.backgroundColor.r != *(uint32 *) &cur.backgroundColor.r)
 		setBackgroundColor(s.backgroundColor);
 
-	if (s.blendMode != cur.blendMode)
-		setBlendMode(s.blendMode);
+	if (s.blendMode != cur.blendMode || s.blendMultiplyAlpha != cur.blendMultiplyAlpha)
+		setBlendMode(s.blendMode, s.blendMultiplyAlpha);
 
 	// These are just simple assignments.
 	setLineWidth(s.lineWidth);
@@ -226,7 +230,7 @@ void Graphics::setViewportSize(int width, int height)
 	Canvas::systemViewport = gl.getViewport();
 
 	// Set up the projection matrix
-	gl.matrices.projection.back() = Matrix::ortho(0.0, width, height, 0.0);
+	gl.matrices.projection.back() = Matrix4::ortho(0.0, (float) width, (float) height, 0.0);
 
 	// Restore the previously active Canvas.
 	setCanvas(canvases);
@@ -270,12 +274,7 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 		|| GLAD_ES_VERSION_3_0 || GLAD_EXT_sRGB)
 	{
 		if (GLAD_VERSION_1_0 || GLAD_EXT_sRGB_write_control)
-		{
-			if (sRGB)
-				glEnable(GL_FRAMEBUFFER_SRGB);
-			else
-				glDisable(GL_FRAMEBUFFER_SRGB);
-		}
+			gl.setFramebufferSRGB(sRGB);
 	}
 	else
 		sRGB = false;
@@ -294,6 +293,14 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 
 	setDebug(enabledebug);
 
+	// Create a quad indices object owned by love.graphics, so at least one
+	// QuadIndices object is alive at all times while love.graphics is alive.
+	// This makes sure there aren't too many expensive destruction/creations of
+	// index buffer objects, since the shared index buffer used by QuadIndices
+	// objects is destroyed when the last object is destroyed.
+	if (quadIndices == nullptr)
+		quadIndices = new QuadIndices(20);
+
 	// Reload all volatile objects.
 	if (!Volatile::loadAll())
 		::printf("Could not reload all volatile objects.\n");
@@ -301,9 +308,9 @@ bool Graphics::setMode(int width, int height, bool &sRGB)
 	// Restore the graphics state.
 	restoreState(states.back());
 
-	pixel_size_stack.clear();
-	pixel_size_stack.reserve(5);
-	pixel_size_stack.push_back(1);
+	pixelSizeStack.clear();
+	pixelSizeStack.reserve(5);
+	pixelSizeStack.push_back(1);
 
 	// We always need a default shader.
 	if (!Shader::defaultShader)
@@ -522,9 +529,11 @@ void Graphics::present()
 	discard({}, true);
 
 #ifdef LOVE_IOS
-	// Hack: SDL's color renderbuffer needs to be bound when swapBuffers is called.
-	GLuint rbo = SDL_iPhoneGetViewRenderbuffer(SDL_GL_GetCurrentWindow());
-	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	// Hack: SDL's color renderbuffer must be bound when swapBuffers is called.
+	SDL_SysWMinfo info = {};
+	SDL_VERSION(&info.version);
+	SDL_GetWindowWMInfo(SDL_GL_GetCurrentWindow(), &info);
+	glBindRenderbuffer(GL_RENDERBUFFER, info.info.uikit.colorbuffer);
 #endif
 
 	currentWindow->swapBuffers();
@@ -671,7 +680,7 @@ Font *Graphics::newFont(love::font::Rasterizer *r, const Texture::Filter &filter
 	return new Font(r, filter);
 }
 
-SpriteBatch *Graphics::newSpriteBatch(Texture *texture, int size, int usage)
+SpriteBatch *Graphics::newSpriteBatch(Texture *texture, int size, Mesh::Usage usage)
 {
 	return new SpriteBatch(texture, size, usage);
 }
@@ -747,14 +756,24 @@ Shader *Graphics::newShader(const Shader::ShaderSource &source)
 	return new Shader(source);
 }
 
-Mesh *Graphics::newMesh(const std::vector<Vertex> &vertices, Mesh::DrawMode mode)
+Mesh *Graphics::newMesh(const std::vector<Vertex> &vertices, Mesh::DrawMode drawmode, Mesh::Usage usage)
 {
-	return new Mesh(vertices, mode);
+	return new Mesh(vertices, drawmode, usage);
 }
 
-Mesh *Graphics::newMesh(int vertexcount, Mesh::DrawMode mode)
+Mesh *Graphics::newMesh(int vertexcount, Mesh::DrawMode drawmode, Mesh::Usage usage)
 {
-	return new Mesh(vertexcount, mode);
+	return new Mesh(vertexcount, drawmode, usage);
+}
+
+Mesh *Graphics::newMesh(const std::vector<Mesh::AttribFormat> &vertexformat, int vertexcount, Mesh::DrawMode drawmode, Mesh::Usage usage)
+{
+	return new Mesh(vertexformat, vertexcount, drawmode, usage);
+}
+
+Mesh *Graphics::newMesh(const std::vector<Mesh::AttribFormat> &vertexformat, const void *data, size_t datasize, Mesh::DrawMode drawmode, Mesh::Usage usage)
+{
+	return new Mesh(vertexformat, data, datasize, drawmode, usage);
 }
 
 Text *Graphics::newText(Font *font, const std::string &text)
@@ -762,9 +781,9 @@ Text *Graphics::newText(Font *font, const std::string &text)
 	return new Text(font, text);
 }
 
-void Graphics::setColor(const Color &c)
+void Graphics::setColor(Color c)
 {
-	gl.setColor(c);
+	glVertexAttrib4f(ATTRIB_CONSTANTCOLOR, c.r/255.0f, c.g/255.0f, c.b/255.0f, c.a/255.0f);
 	states.back().color = c;
 }
 
@@ -773,7 +792,7 @@ Color Graphics::getColor() const
 	return states.back().color;
 }
 
-void Graphics::setBackgroundColor(const Color &c)
+void Graphics::setBackgroundColor(Color c)
 {
 	states.back().backgroundColor = c;
 }
@@ -904,7 +923,7 @@ Graphics::ColorMask Graphics::getColorMask() const
 	return states.back().colorMask;
 }
 
-void Graphics::setBlendMode(Graphics::BlendMode mode)
+void Graphics::setBlendMode(BlendMode mode, bool multiplyalpha)
 {
 	GLenum func   = GL_FUNC_ADD;
 	GLenum srcRGB = GL_ONE;
@@ -915,22 +934,18 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 	switch (mode)
 	{
 	case BLEND_ALPHA:
-		srcRGB = GL_SRC_ALPHA;
-		srcA = GL_ONE;
+		srcRGB = srcA = GL_ONE;
 		dstRGB = dstA = GL_ONE_MINUS_SRC_ALPHA;
 		break;
 	case BLEND_MULTIPLY:
 		srcRGB = srcA = GL_DST_COLOR;
 		dstRGB = dstA = GL_ZERO;
 		break;
-	case BLEND_PREMULTIPLIED:
-		srcRGB = srcA = GL_ONE;
-		dstRGB = dstA = GL_ONE_MINUS_SRC_ALPHA;
-		break;
 	case BLEND_SUBTRACT:
 		func = GL_FUNC_REVERSE_SUBTRACT;
 	case BLEND_ADD:
-		srcRGB = srcA = GL_SRC_ALPHA;
+		srcRGB = GL_ONE;
+		srcA = GL_SRC_ALPHA; // FIXME: This isn't correct...
 		dstRGB = dstA = GL_ONE;
 		break;
 	case BLEND_SCREEN:
@@ -944,14 +959,20 @@ void Graphics::setBlendMode(Graphics::BlendMode mode)
 		break;
 	}
 
+	// We can only do alpha-multiplication when srcRGB would have been unmodified.
+	if (srcRGB == GL_ONE && multiplyalpha)
+		srcRGB = GL_SRC_ALPHA;
+
 	glBlendEquation(func);
 	glBlendFuncSeparate(srcRGB, dstRGB, srcA, dstA);
 
 	states.back().blendMode = mode;
+	states.back().blendMultiplyAlpha = multiplyalpha;
 }
 
-Graphics::BlendMode Graphics::getBlendMode() const
+Graphics::BlendMode Graphics::getBlendMode(bool &multiplyalpha) const
 {
+	multiplyalpha = states.back().blendMultiplyAlpha;
 	return states.back().blendMode;
 }
 
@@ -1069,10 +1090,9 @@ void Graphics::point(float x, float y)
 
 	gl.prepareDraw();
 	gl.bindTexture(gl.getDefaultTexture());
-	glEnableVertexAttribArray(ATTRIB_POS);
+	gl.useVertexAttribArrays(ATTRIBFLAG_POS);
 	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, 0, coord);
 	gl.drawArrays(GL_POINTS, 0, 1);
-	glDisableVertexAttribArray(ATTRIB_POS);
 }
 
 void Graphics::polyline(const float *coords, size_t count)
@@ -1082,19 +1102,19 @@ void Graphics::polyline(const float *coords, size_t count)
 	if (state.lineJoin == LINE_JOIN_NONE)
 	{
 		NoneJoinPolyline line;
-		line.render(coords, count, state.lineWidth * .5f, float(pixel_size_stack.back()), state.lineStyle == LINE_SMOOTH);
+		line.render(coords, count, state.lineWidth * .5f, float(pixelSizeStack.back()), state.lineStyle == LINE_SMOOTH);
 		line.draw();
 	}
 	else if (state.lineJoin == LINE_JOIN_BEVEL)
 	{
 		BevelJoinPolyline line;
-		line.render(coords, count, state.lineWidth * .5f, float(pixel_size_stack.back()), state.lineStyle == LINE_SMOOTH);
+		line.render(coords, count, state.lineWidth * .5f, float(pixelSizeStack.back()), state.lineStyle == LINE_SMOOTH);
 		line.draw();
 	}
 	else // LINE_JOIN_MITER
 	{
 		MiterJoinPolyline line;
-		line.render(coords, count, state.lineWidth * .5f, float(pixel_size_stack.back()), state.lineStyle == LINE_SMOOTH);
+		line.render(coords, count, state.lineWidth * .5f, float(pixelSizeStack.back()), state.lineStyle == LINE_SMOOTH);
 		line.draw();
 	}
 }
@@ -1105,7 +1125,67 @@ void Graphics::rectangle(DrawMode mode, float x, float y, float w, float h)
 	polygon(mode, coords, 5 * 2);
 }
 
+void Graphics::rectangle(DrawMode mode, float x, float y, float w, float h, float rx, float ry, int points)
+{
+	if (rx == 0 || ry == 0)
+	{
+		rectangle(mode, x, y, w, h);
+		return;
+	}
+
+	points = std::max(points, 1);
+
+	const float half_pi = static_cast<float>(LOVE_M_PI / 2);
+	float angle_shift = half_pi / ((float) points + 1.0f);
+
+	int num_coords = (points + 2) * 8;
+	float *coords = new float[num_coords + 2];
+	float phi = .0f;
+
+	for (int i = 0; i <= points + 2; ++i, phi += angle_shift)
+	{
+		coords[2 * i + 0] = x + rx * (1 - cosf(phi));
+		coords[2 * i + 1] = y + ry * (1 - sinf(phi));
+	}
+
+	phi = half_pi;
+
+	for (int i = points + 2; i <= 2 * (points + 2); ++i, phi += angle_shift)
+	{
+		coords[2 * i + 0] = x + w - rx * (1 + cosf(phi));
+		coords[2 * i + 1] = y + ry * (1 - sinf(phi));
+	}
+
+	phi = 2 * half_pi;
+
+	for (int i = 2 * (points + 2); i <= 3 * (points + 2); ++i, phi += angle_shift)
+	{
+		coords[2 * i + 0] = x + w - rx * (1 + cosf(phi));
+		coords[2 * i + 1] = y + h - ry * (1 + sinf(phi));
+	}
+
+	phi =  3 * half_pi;
+
+	for (int i = 3 * (points + 2); i <= 4 * (points + 2); ++i, phi += angle_shift)
+	{
+		coords[2 * i + 0] = x + rx * (1 - cosf(phi));
+		coords[2 * i + 1] = y + h - ry * (1 + sinf(phi));
+	}
+
+	coords[num_coords + 0] = coords[0];
+	coords[num_coords + 1] = coords[1];
+
+	polygon(mode, coords, num_coords + 2);
+
+	delete[] coords;
+}
+
 void Graphics::circle(DrawMode mode, float x, float y, float radius, int points)
+{
+	ellipse(mode, x, y, radius, radius, points);
+}
+
+void Graphics::ellipse(DrawMode mode, float x, float y, float a, float b, int points)
 {
 	float two_pi = static_cast<float>(LOVE_M_PI * 2);
 	if (points <= 0) points = 1;
@@ -1115,11 +1195,11 @@ void Graphics::circle(DrawMode mode, float x, float y, float radius, int points)
 	float *coords = new float[2 * (points + 1)];
 	for (int i = 0; i < points; ++i, phi += angle_shift)
 	{
-		coords[2*i]   = x + radius * cosf(phi);
-		coords[2*i+1] = y + radius * sinf(phi);
+		coords[2*i+0] = x + a * cosf(phi);
+		coords[2*i+1] = y + b * sinf(phi);
 	}
 
-	coords[2*points]   = coords[0];
+	coords[2*points+0] = coords[0];
 	coords[2*points+1] = coords[1];
 
 	polygon(mode, coords, (points + 1) * 2);
@@ -1168,10 +1248,9 @@ void Graphics::arc(DrawMode mode, float x, float y, float radius, float angle1, 
 
 		gl.prepareDraw();
 		gl.bindTexture(gl.getDefaultTexture());
-		glEnableVertexAttribArray(ATTRIB_POS);
+		gl.useVertexAttribArrays(ATTRIBFLAG_POS);
 		glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, 0, coords);
 		gl.drawArrays(GL_TRIANGLE_FAN, 0, points + 2);
-		glDisableVertexAttribArray(ATTRIB_POS);
 	}
 
 	delete[] coords;
@@ -1194,10 +1273,9 @@ void Graphics::polygon(DrawMode mode, const float *coords, size_t count)
 
 		gl.prepareDraw();
 		gl.bindTexture(gl.getDefaultTexture());
-		glEnableVertexAttribArray(ATTRIB_POS);
+		gl.useVertexAttribArrays(ATTRIBFLAG_POS);
 		glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, 0, coords);
 		gl.drawArrays(GL_TRIANGLE_FAN, 0, (int)count/2-1); // opengl will close the polygon for us
-		glDisableVertexAttribArray(ATTRIB_POS);
 	}
 }
 
@@ -1357,7 +1435,7 @@ void Graphics::push(StackType type)
 
 	gl.pushTransform();
 
-	pixel_size_stack.push_back(pixel_size_stack.back());
+	pixelSizeStack.push_back(pixelSizeStack.back());
 
 	if (type == STACK_ALL)
 		states.push_back(states.back());
@@ -1371,7 +1449,7 @@ void Graphics::pop()
 		throw Exception("Minimum stack depth reached (more pops than pushes?)");
 
 	gl.popTransform();
-	pixel_size_stack.pop_back();
+	pixelSizeStack.pop_back();
 
 	if (stackTypes.back() == STACK_ALL)
 	{
@@ -1394,7 +1472,7 @@ void Graphics::rotate(float r)
 void Graphics::scale(float x, float y)
 {
 	gl.getTransform().scale(x, y);
-	pixel_size_stack.back() *= 2. / (fabs(x) + fabs(y));
+	pixelSizeStack.back() *= 2. / (fabs(x) + fabs(y));
 }
 
 void Graphics::translate(float x, float y)
@@ -1404,19 +1482,20 @@ void Graphics::translate(float x, float y)
 
 void Graphics::shear(float kx, float ky)
 {
-	gl.getTransform().setShear(kx, ky);
+	gl.getTransform().shear(kx, ky);
 }
 
 void Graphics::origin()
 {
 	gl.getTransform().setIdentity();
-	pixel_size_stack.back() = 1;
+	pixelSizeStack.back() = 1;
 }
 
 Graphics::DisplayState::DisplayState()
 	: color(255, 255, 255, 255)
 	, backgroundColor(0, 0, 0, 255)
 	, blendMode(BLEND_ALPHA)
+	, blendMultiplyAlpha(true)
 	, lineWidth(1.0f)
 	, lineStyle(LINE_SMOOTH)
 	, lineJoin(LINE_JOIN_MITER)
@@ -1439,6 +1518,7 @@ Graphics::DisplayState::DisplayState(const DisplayState &other)
 	: color(other.color)
 	, backgroundColor(other.backgroundColor)
 	, blendMode(other.blendMode)
+	, blendMultiplyAlpha(other.blendMultiplyAlpha)
 	, lineWidth(other.lineWidth)
 	, lineStyle(other.lineStyle)
 	, lineJoin(other.lineJoin)
@@ -1467,6 +1547,7 @@ Graphics::DisplayState &Graphics::DisplayState::operator = (const DisplayState &
 	color = other.color;
 	backgroundColor = other.backgroundColor;
 	blendMode = other.blendMode;
+	blendMultiplyAlpha = other.blendMultiplyAlpha;
 	lineWidth = other.lineWidth;
 	lineStyle = other.lineStyle;
 	lineJoin = other.lineJoin;

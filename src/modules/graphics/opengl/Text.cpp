@@ -59,7 +59,7 @@ void Text::uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t
 		if (vbo != nullptr)
 			newsize = std::max(size_t(vbo->getSize() * 1.5), newsize);
 
-		GLBuffer *new_vbo = GLBuffer::Create(newsize, GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW);
+		GLBuffer *new_vbo = new GLBuffer(newsize, nullptr, GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW);
 
 		if (vbo != nullptr)
 		{
@@ -170,7 +170,7 @@ void Text::set(const std::string &text)
 	if (text.empty())
 		return set();
 
-	addTextData({text, -1.0f, Font::ALIGN_MAX_ENUM, false, false, Matrix()});
+	addTextData({text, -1.0f, Font::ALIGN_MAX_ENUM, false, false, Matrix4()});
 }
 
 void Text::set(const std::string &text, float wrap, Font::AlignMode align)
@@ -178,7 +178,7 @@ void Text::set(const std::string &text, float wrap, Font::AlignMode align)
 	if (text.empty())
 		return set();
 
-	addTextData({text, wrap, align, false, false, Matrix()});
+	addTextData({text, wrap, align, false, false, Matrix4()});
 }
 
 void Text::set()
@@ -191,8 +191,7 @@ void Text::add(const std::string &text, float x, float y, float angle, float sx,
 	if (text.empty())
 		return;
 
-	Matrix m;
-	m.setTransformation(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 m(x, y, angle, sx, sy, ox, oy, kx, ky);
 
 	addTextData({text, -1.0f, Font::ALIGN_MAX_ENUM, true, true, m});
 }
@@ -202,8 +201,7 @@ void Text::addf(const std::string &text, float wrap, Font::AlignMode align, floa
 	if (text.empty())
 		return;
 
-	Matrix m;
-	m.setTransformation(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 m(x, y, angle, sx, sy, ox, oy, kx, ky);
 
 	addTextData({text, wrap, align, true, true, m});
 }
@@ -232,8 +230,7 @@ void Text::draw(float x, float y, float angle, float sx, float sy, float ox, flo
 	const size_t tex_offset = offsetof(Font::GlyphVertex, s);
 	const size_t stride = sizeof(Font::GlyphVertex);
 
-	Matrix t;
-	t.setTransformation(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
+	Matrix4 t(ceilf(x), ceilf(y), angle, sx, sy, ox, oy, kx, ky);
 
 	OpenGL::TempTransform transform(gl);
 	transform.get() *= t;
@@ -247,22 +244,19 @@ void Text::draw(float x, float y, float angle, float sx, float sy, float ox, flo
 		glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, stride, vbo->getPointer(tex_offset));
 	}
 
-	glEnableVertexAttribArray(ATTRIB_POS);
-	glEnableVertexAttribArray(ATTRIB_TEXCOORD);
+	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD);
 
-	try
-	{
-		font->drawVertices(draw_commands);
-	}
-	catch (love::Exception &)
-	{
-		glDisableVertexAttribArray(ATTRIB_TEXCOORD);
-		glDisableVertexAttribArray(ATTRIB_POS);
-		throw;
-	}
+	font->drawVertices(draw_commands);
+}
 
-	glDisableVertexAttribArray(ATTRIB_TEXCOORD);
-	glDisableVertexAttribArray(ATTRIB_POS);
+void Text::setFont(Font *f)
+{
+	font.set(f);
+
+	// Invalidate the texture cache ID since the font is different. We also have
+	// to re-upload all the vertices based on the new font's textures.
+	texture_cache_id = (uint32) -1;
+	regenerateVertices();
 }
 
 Font *Text::getFont() const

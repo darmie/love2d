@@ -26,11 +26,15 @@
 #include "font/Rasterizer.h"
 #include "filesystem/wrap_Filesystem.h"
 
-#include "scripts/graphics.lua.h"
 #include <cassert>
 #include <cstring>
 
 #include <algorithm>
+
+// Shove the wrap_Graphics.lua code directly into a raw string literal.
+static const char graphics_lua[] =
+#include "wrap_Graphics.lua"
+;
 
 namespace love
 {
@@ -94,7 +98,7 @@ int w_discard(lua_State *L)
 
 	if (lua_istable(L, 1))
 	{
-		for (size_t i = 1; i <= lua_objlen(L, 1); i++)
+		for (size_t i = 1; i <= luax_objlen(L, 1); i++)
 		{
 			lua_rawgeti(L, 1, i);
 			colorbuffers.push_back(luax_optboolean(L, -1, true));
@@ -161,10 +165,10 @@ int w_setScissor(lua_State *L)
 		return 0;
 	}
 
-	int x = luaL_checkint(L, 1);
-	int y = luaL_checkint(L, 2);
-	int w = luaL_checkint(L, 3);
-	int h = luaL_checkint(L, 4);
+	int x = (int) luaL_checknumber(L, 1);
+	int y = (int) luaL_checknumber(L, 2);
+	int w = (int) luaL_checknumber(L, 3);
+	int h = (int) luaL_checknumber(L, 4);
 
 	if (w < 0 || h < 0)
 		return luaL_error(L, "Can't set scissor with negative width and/or height.");
@@ -258,14 +262,14 @@ int w_newImage(lua_State *L)
 		{
 			luax_catchexcept(L,
 				[&]() { cdata = image->newCompressedData(fdata); },
-				[&]() { fdata->release(); }
+				[&](bool) { fdata->release(); }
 			);
 		}
 		else
 		{
 			luax_catchexcept(L,
 				[&]() { data = image->newImageData(fdata); },
-				[&]() { fdata->release(); }
+				[&](bool) { fdata->release(); }
 			);
 		}
 
@@ -289,7 +293,7 @@ int w_newImage(lua_State *L)
 			else if (data)
 				image = instance()->newImage(data, flags);
 		},
-		[&]() {
+		[&](bool) {
 			if (releasedata && data)
 				data->release();
 			else if (releasedata && cdata)
@@ -392,12 +396,12 @@ int w_newImageFont(lua_State *L)
 int w_newSpriteBatch(lua_State *L)
 {
 	Texture *texture = luax_checktexture(L, 1);
-	int size = luaL_optint(L, 2, 1000);
-	SpriteBatch::UsageHint usage = SpriteBatch::USAGE_DYNAMIC;
+	int size = (int) luaL_optnumber(L, 2, 1000);
+	Mesh::Usage usage = Mesh::USAGE_DYNAMIC;
 	if (lua_gettop(L) > 2)
 	{
 		const char *usagestr = luaL_checkstring(L, 3);
-		if (!SpriteBatch::getConstant(usagestr, usage))
+		if (!Mesh::getConstant(usagestr, usage))
 			return luaL_error(L, "Invalid SpriteBatch usage hint: %s", usagestr);
 	}
 
@@ -417,7 +421,7 @@ int w_newParticleSystem(lua_State *L)
 	lua_Number size = luaL_optnumber(L, 2, 1000);
 	ParticleSystem *t = 0;
 	if (size < 1.0 || size > ParticleSystem::MAX_PARTICLES)
-		return luaL_error(L, "Invalid ParticleSystem size");	
+		return luaL_error(L, "Invalid ParticleSystem size");
 
 	luax_catchexcept(L,
 		[&](){ t = instance()->newParticleSystem(texture, int(size)); }
@@ -431,10 +435,10 @@ int w_newParticleSystem(lua_State *L)
 int w_newCanvas(lua_State *L)
 {
 	// check if width and height are given. else default to screen dimensions.
-	int width       = luaL_optint(L, 1, instance()->getWidth());
-	int height      = luaL_optint(L, 2, instance()->getHeight());
+	int width       = (int) luaL_optnumber(L, 1, instance()->getWidth());
+	int height      = (int) luaL_optnumber(L, 2, instance()->getHeight());
 	const char *str = luaL_optstring(L, 3, "normal");
-	int msaa        = luaL_optint(L, 4, 0);
+	int msaa        = (int) luaL_optnumber(L, 4, 0);
 
 	Canvas::Format format;
 	if (!Canvas::getConstant(str, format))
@@ -494,8 +498,8 @@ int w_newShader(lua_State *L)
 		}
 	}
 
-	bool has_arg1 = lua_isstring(L, 1);
-	bool has_arg2 = lua_isstring(L, 2);
+	bool has_arg1 = lua_isstring(L, 1) != 0;
+	bool has_arg2 = lua_isstring(L, 2) != 0;
 
 	// require at least one string argument
 	if (!(has_arg1 || has_arg2))
@@ -558,43 +562,69 @@ int w_newShader(lua_State *L)
 	return 1;
 }
 
-int w_newMesh(lua_State *L)
+static Mesh::Usage luax_optmeshusage(lua_State *L, int idx, Mesh::Usage def)
 {
-	// Check first argument: table of vertices or number of vertices.
-	int ttype = lua_type(L, 1);
-	if (ttype != LUA_TTABLE && ttype != LUA_TNUMBER)
-		luaL_argerror(L, 1, "table or number expected");
+	const char *usagestr = lua_isnoneornil(L, idx) ? nullptr : luaL_checkstring(L, idx);
 
-	// Second argument: optional texture.
-	Texture *tex = nullptr;
-	if (!lua_isnoneornil(L, 2))
-		tex = luax_checktexture(L, 2);
+	if (usagestr && !Mesh::getConstant(usagestr, def))
+		luaL_error(L, "Invalid mesh usage hint: %s", usagestr);
 
-	// Third argument: optional draw mode.
-	const char *str = 0;
-	Mesh::DrawMode mode = Mesh::DRAW_MODE_FAN;
-	str = lua_isnoneornil(L, 3) ? 0 : luaL_checkstring(L, 3);
+	return def;
+}
 
-	if (str && !Mesh::getConstant(str, mode))
-		return luaL_error(L, "Invalid mesh draw mode: %s", str);
+static Mesh::DrawMode luax_optmeshdrawmode(lua_State *L, int idx, Mesh::DrawMode def)
+{
+	const char *modestr = lua_isnoneornil(L, idx) ? nullptr : luaL_checkstring(L, idx);
 
+	if (modestr && !Mesh::getConstant(modestr, def))
+		luaL_error(L, "Invalid mesh draw mode: %s", modestr);
+
+	return def;
+}
+
+static inline size_t writeVertexByteData(lua_State *L, int startidx, int components, char *data)
+{
+	uint8 *componentdata = (uint8 *) data;
+	for (int i = 0; i < components; i++)
+		componentdata[i] = (uint8) luaL_optnumber(L, startidx + i, 255);
+
+	return sizeof(uint8) * components;
+}
+
+static inline size_t writeVertexFloatData(lua_State *L, int startidx, int components, char *data)
+{
+	float *componentdata = (float *) data;
+	for (int i = 0; i < components; i++)
+		componentdata[i] = (float) luaL_optnumber(L, startidx + i, 0);
+
+	return sizeof(float) * components;
+}
+
+static Mesh *newStandardMesh(lua_State *L)
+{
 	Mesh *t = nullptr;
 
-	if (ttype == LUA_TTABLE)
-	{
-		size_t vertex_count = lua_objlen(L, 1);
-		std::vector<Vertex> vertices;
-		vertices.reserve(vertex_count);
+	Mesh::DrawMode drawmode = luax_optmeshdrawmode(L, 2, Mesh::DRAWMODE_FAN);
+	Mesh::Usage usage = luax_optmeshusage(L, 3, Mesh::USAGE_DYNAMIC);
 
-		bool use_colors = false;
+	// First argument is a table of standard vertices, or the number of
+	// standard vertices.
+	if (lua_istable(L, 1))
+	{
+		size_t vertexcount = luax_objlen(L, 1);
+		std::vector<Vertex> vertices;
+		vertices.reserve(vertexcount);
 
 		// Get the vertices from the table.
-		for (size_t i = 1; i <= vertex_count; i++)
+		for (size_t i = 1; i <= vertexcount; i++)
 		{
 			lua_rawgeti(L, 1, (int) i);
 
 			if (lua_type(L, -1) != LUA_TTABLE)
-				return luax_typerror(L, 1, "table of tables");
+			{
+				luax_typerror(L, 1, "table of tables");
+				return nullptr;
+			}
 
 			for (int j = 1; j <= 8; j++)
 				lua_rawgeti(L, -j, j);
@@ -603,34 +633,179 @@ int w_newMesh(lua_State *L)
 
 			v.x = (float) luaL_checknumber(L, -8);
 			v.y = (float) luaL_checknumber(L, -7);
-
 			v.s = (float) luaL_optnumber(L, -6, 0.0);
 			v.t = (float) luaL_optnumber(L, -5, 0.0);
-
 			v.r = (unsigned char) luaL_optinteger(L, -4, 255);
 			v.g = (unsigned char) luaL_optinteger(L, -3, 255);
 			v.b = (unsigned char) luaL_optinteger(L, -2, 255);
 			v.a = (unsigned char) luaL_optinteger(L, -1, 255);
 
-			// Enable per-vertex coloring if any color is not the default.
-			if (!use_colors && (v.r != 255 || v.g != 255 || v.b != 255 || v.a != 255))
-				use_colors = true;
-
 			lua_pop(L, 9);
 			vertices.push_back(v);
 		}
 
-		luax_catchexcept(L, [&](){ t = instance()->newMesh(vertices, mode); });
-		t->setVertexColors(use_colors);
+		luax_catchexcept(L, [&](){ t = instance()->newMesh(vertices, drawmode, usage); });
 	}
 	else
 	{
-		int count = luaL_checkint(L, 1);
-		luax_catchexcept(L, [&](){ t = instance()->newMesh(count, mode); });
+		int count = (int) luaL_checknumber(L, 1);
+		luax_catchexcept(L, [&](){ t = instance()->newMesh(count, drawmode, usage); });
 	}
 
-	if (tex)
-		t->setTexture(tex);
+	return t;
+}
+
+static Mesh *newCustomMesh(lua_State *L)
+{
+	Mesh *t = nullptr;
+
+	// First argument is the vertex format, second is a table of vertices or
+	// the number of vertices.
+	std::vector<Mesh::AttribFormat> vertexformat;
+
+	Mesh::DrawMode drawmode = luax_optmeshdrawmode(L, 3, Mesh::DRAWMODE_FAN);
+	Mesh::Usage usage = luax_optmeshusage(L, 4, Mesh::USAGE_DYNAMIC);
+
+	lua_rawgeti(L, 1, 1);
+	if (!lua_istable(L, -1))
+	{
+		luaL_argerror(L, 1, "table of tables expected");
+		return nullptr;
+	}
+	lua_pop(L, 1);
+
+	// Per-vertex attribute formats.
+	for (int i = 1; i <= (int) luax_objlen(L, 1); i++)
+	{
+		lua_rawgeti(L, 1, i);
+
+		// {name, datatype, components}
+		for (int j = 1; j <= 3; j++)
+			lua_rawgeti(L, -j, j);
+
+		Mesh::AttribFormat format;
+		format.name = luaL_checkstring(L, -3);
+
+		const char *tname = luaL_checkstring(L, -2);
+		if (!Mesh::getConstant(tname, format.type))
+		{
+			luaL_error(L, "Invalid Mesh vertex data type name: %s", tname);
+			return nullptr;
+		}
+
+		format.components = (int) luaL_checknumber(L, -1);
+		if (format.components <= 0 || format.components > 4)
+		{
+			luaL_error(L, "Number of vertex attribute components must be between 1 and 4 (got %d)", format.components);
+			return nullptr;
+		}
+
+		lua_pop(L, 4);
+		vertexformat.push_back(format);
+	}
+
+	if (lua_isnumber(L, 2))
+	{
+		int vertexcount = (int) luaL_checknumber(L, 2);
+		luax_catchexcept(L, [&](){ t = instance()->newMesh(vertexformat, vertexcount, drawmode, usage); });
+	}
+	else if (luax_istype(L, 2, DATA_ID))
+	{
+		// Vertex data comes directly from a Data object.
+		Data *data = luax_checktype<Data>(L, 2, DATA_ID);
+		luax_catchexcept(L, [&](){ t = instance()->newMesh(vertexformat, data->getData(), data->getSize(), drawmode, usage); });
+	}
+	else
+	{
+		// Table of vertices.
+		lua_rawgeti(L, 2, 1);
+		if (!lua_istable(L, -1))
+		{
+			luaL_argerror(L, 2, "expected table of tables");
+			return nullptr;
+		}
+		lua_pop(L, 1);
+
+		int vertexcomponents = 0;
+		for (const Mesh::AttribFormat &format : vertexformat)
+			vertexcomponents += format.components;
+
+		size_t numvertices = luax_objlen(L, 2);
+
+		luax_catchexcept(L, [&](){ t = instance()->newMesh(vertexformat, numvertices, drawmode, usage); });
+
+		// Maximum possible data size for a single vertex attribute.
+		char data[sizeof(float) * 4];
+
+		for (size_t vertindex = 0; vertindex < numvertices; vertindex++)
+		{
+			// get vertices[vertindex]
+			lua_rawgeti(L, 2, vertindex + 1);
+			luaL_checktype(L, -1, LUA_TTABLE);
+
+			if ((int) luax_objlen(L, -1) < vertexcomponents)
+			{
+				t->release();
+				const char *err = "Invalid number of components in vertex #%d (expected %d components, got %d)";
+				luaL_error(L, err, vertindex+1, vertexcomponents, luax_objlen(L, -1));
+				return nullptr;
+			}
+
+			int n = 0;
+			for (size_t i = 0; i < vertexformat.size(); i++)
+			{
+				int components = vertexformat[i].components;
+
+				// get vertices[vertindex][n]
+				for (int c = 0; c < components; c++)
+				{
+					n++;
+					lua_rawgeti(L, -(c + 1), n);
+				}
+
+				// Fetch the values from Lua and store them in data buffer.
+				switch (vertexformat[i].type)
+				{
+				case Mesh::DATA_BYTE:
+					writeVertexByteData(L, -components, components, data);
+					break;
+				case Mesh::DATA_FLOAT:
+				default:
+					writeVertexFloatData(L, -components, components, data);
+					break;
+				}
+
+				lua_pop(L, components);
+
+				luax_catchexcept(L,
+					[&](){ t->setVertexAttribute(vertindex, i, data, sizeof(float) * 4); },
+					[&](bool diderror){ if (diderror) t->release(); }
+				);
+			}
+
+			lua_pop(L, 1); // pop vertices[vertindex]
+		}
+
+		t->flush();
+	}
+
+	return t;
+}
+
+int w_newMesh(lua_State *L)
+{
+	// Check first argument: table or number of vertices.
+	int arg1type = lua_type(L, 1);
+	if (arg1type != LUA_TTABLE && arg1type != LUA_TNUMBER)
+		luaL_argerror(L, 1, "table or number expected");
+
+	Mesh *t = nullptr;
+
+	int arg2type = lua_type(L, 2);
+	if (arg1type == LUA_TTABLE && (arg2type == LUA_TTABLE || arg2type == LUA_TNUMBER || arg2type == LUA_TUSERDATA))
+		t = newCustomMesh(L);
+	else
+		t = newStandardMesh(L);
 
 	luax_pushtype(L, GRAPHICS_MESH_ID, t);
 	t->release();
@@ -663,19 +838,19 @@ int w_setColor(lua_State *L)
 		for (int i = 1; i <= 4; i++)
 			lua_rawgeti(L, 1, i);
 
-		c.r = (unsigned char)luaL_checkint(L, -4);
-		c.g = (unsigned char)luaL_checkint(L, -3);
-		c.b = (unsigned char)luaL_checkint(L, -2);
-		c.a = (unsigned char)luaL_optint(L, -1, 255);
+		c.r = (unsigned char) luaL_checknumber(L, -4);
+		c.g = (unsigned char) luaL_checknumber(L, -3);
+		c.b = (unsigned char) luaL_checknumber(L, -2);
+		c.a = (unsigned char) luaL_optnumber(L, -1, 255);
 
 		lua_pop(L, 4);
 	}
 	else
 	{
-		c.r = (unsigned char)luaL_checkint(L, 1);
-		c.g = (unsigned char)luaL_checkint(L, 2);
-		c.b = (unsigned char)luaL_checkint(L, 3);
-		c.a = (unsigned char)luaL_optint(L, 4, 255);
+		c.r = (unsigned char) luaL_checknumber(L, 1);
+		c.g = (unsigned char) luaL_checknumber(L, 2);
+		c.b = (unsigned char) luaL_checknumber(L, 3);
+		c.a = (unsigned char) luaL_optnumber(L, 4, 255);
 	}
 	instance()->setColor(c);
 	return 0;
@@ -699,19 +874,19 @@ int w_setBackgroundColor(lua_State *L)
 		for (int i = 1; i <= 4; i++)
 			lua_rawgeti(L, 1, i);
 
-		c.r = (unsigned char)luaL_checkint(L, -4);
-		c.g = (unsigned char)luaL_checkint(L, -3);
-		c.b = (unsigned char)luaL_checkint(L, -2);
-		c.a = (unsigned char)luaL_optint(L, -1, 255);
+		c.r = (unsigned char) luaL_checknumber(L, -4);
+		c.g = (unsigned char) luaL_checknumber(L, -3);
+		c.b = (unsigned char) luaL_checknumber(L, -2);
+		c.a = (unsigned char) luaL_optnumber(L, -1, 255);
 
 		lua_pop(L, 4);
 	}
 	else
 	{
-		c.r = (unsigned char)luaL_checkint(L, 1);
-		c.g = (unsigned char)luaL_checkint(L, 2);
-		c.b = (unsigned char)luaL_checkint(L, 3);
-		c.a = (unsigned char)luaL_optint(L, 4, 255);
+		c.r = (unsigned char) luaL_checknumber(L, 1);
+		c.g = (unsigned char) luaL_checknumber(L, 2);
+		c.b = (unsigned char) luaL_checknumber(L, 3);
+		c.a = (unsigned char) luaL_optnumber(L, 4, 255);
 	}
 	instance()->setBackgroundColor(c);
 	return 0;
@@ -792,7 +967,9 @@ int w_setBlendMode(lua_State *L)
 	if (!Graphics::getConstant(str, mode))
 		return luaL_error(L, "Invalid blend mode: %s", str);
 
-	luax_catchexcept(L, [&](){ instance()->setBlendMode(mode); });
+	bool multiplyalpha = luax_optboolean(L, 2, true);
+
+	luax_catchexcept(L, [&](){ instance()->setBlendMode(mode, multiplyalpha); });
 	return 0;
 }
 
@@ -800,14 +977,16 @@ int w_getBlendMode(lua_State *L)
 {
 	const char *str;
 	Graphics::BlendMode mode;
+	bool multiplyalpha = false;
 
-	luax_catchexcept(L, [&](){ mode = instance()->getBlendMode(); });
+	luax_catchexcept(L, [&](){ mode = instance()->getBlendMode(multiplyalpha); });
 
 	if (!Graphics::getConstant(mode, str))
 		return luaL_error(L, "Unknown blend mode");
 
 	lua_pushstring(L, str);
-	return 1;
+	lua_pushboolean(L, multiplyalpha);
+	return 2;
 }
 
 int w_setDefaultFilter(lua_State *L)
@@ -873,7 +1052,7 @@ int w_getDefaultMipmapFilter(lua_State *L)
 		lua_pushstring(L, str);
 	else
 		lua_pushnil(L);
-	
+
 	lua_pushnumber(L, sharpness);
 
 	return 2;
@@ -989,7 +1168,7 @@ int w_setCanvas(lua_State *L)
 
 	if (is_table)
 	{
-		for (int i = 1; i <= (int) lua_objlen(L, 1); i++)
+		for (int i = 1; i <= (int) luax_objlen(L, 1); i++)
 		{
 			lua_rawgeti(L, 1, i);
 			canvases.push_back(luax_checkcanvas(L, -1));
@@ -1085,7 +1264,6 @@ int w_setDefaultShaderCode(lua_State *L)
 
 	return 0;
 }
-
 
 int w_getSupported(lua_State *L)
 {
@@ -1209,7 +1387,7 @@ int w_getStats(lua_State *L)
 	Graphics::getConstant(Graphics::STAT_TEXTURE_MEMORY, sname);
 	lua_pushnumber(L, (lua_Number) stats.textureMemory);
 	lua_setfield(L, -2, sname);
-	
+
 	return 1;
 }
 
@@ -1246,10 +1424,12 @@ int w_draw(lua_State *L)
 	float kx = (float) luaL_optnumber(L, startidx + 7, 0.0);
 	float ky = (float) luaL_optnumber(L, startidx + 8, 0.0);
 
-	if (texture && quad)
-		texture->drawq(quad, x, y, a, sx, sy, ox, oy, kx, ky);
-	else if (drawable)
-		drawable->draw(x, y, a, sx, sy, ox, oy, kx, ky);
+	luax_catchexcept(L, [&]() {
+		if (texture && quad)
+			texture->drawq(quad, x, y, a, sx, sy, ox, oy, kx, ky);
+		else if (drawable)
+			drawable->draw(x, y, a, sx, sy, ox, oy, kx, ky);
+	});
 
 	return 0;
 }
@@ -1325,7 +1505,7 @@ int w_line(lua_State *L)
 	bool is_table = false;
 	if (args == 1 && lua_istable(L, 1))
 	{
-		args = (int) lua_objlen(L, 1);
+		args = (int) luax_objlen(L, 1);
 		is_table = true;
 	}
 
@@ -1367,7 +1547,28 @@ int w_rectangle(lua_State *L)
 	float y = (float)luaL_checknumber(L, 3);
 	float w = (float)luaL_checknumber(L, 4);
 	float h = (float)luaL_checknumber(L, 5);
-	instance()->rectangle(mode, x, y, w, h);
+
+	if (lua_isnoneornil(L, 6))
+	{
+		instance()->rectangle(mode, x, y, w, h);
+		return 0;
+	}
+
+	float rx = (float)luaL_optnumber(L, 6, 0.0);
+	float ry = (float)luaL_optnumber(L, 7, rx);
+
+	if (w > 0.0 && rx >= w / 2.0)
+		return luaL_error(L, "Invalid rectangle x-axis radius (must be less than half the width)");
+	if (h > 0.0 && ry >= h / 2.0)
+		return luaL_error(L, "Invalid rectangle y-axis radius (must be less than half the height)");
+
+	int points;
+	if (lua_isnoneornil(L, 8))
+		points = std::max(rx, ry) > 20.0 ? (int)(std::max(rx, ry) / 2) : 10;
+	else
+		points = (int) luaL_checknumber(L, 8);
+
+	instance()->rectangle(mode, x, y, w, h, rx, ry, points);
 	return 0;
 }
 
@@ -1385,9 +1586,31 @@ int w_circle(lua_State *L)
 	if (lua_isnoneornil(L, 5))
 		points = radius > 10 ? (int)(radius) : 10;
 	else
-		points = luaL_checkint(L, 5);
+		points = (int) luaL_checknumber(L, 5);
 
 	instance()->circle(mode, x, y, radius, points);
+	return 0;
+}
+
+int w_ellipse(lua_State *L)
+{
+	Graphics::DrawMode mode;
+	const char *str = luaL_checkstring(L, 1);
+	if (!Graphics::getConstant(str, mode))
+		return luaL_error(L, "Incorrect draw mode %s", str);
+
+	float x = (float)luaL_checknumber(L, 2);
+	float y = (float)luaL_checknumber(L, 3);
+	float a = (float)luaL_checknumber(L, 4);
+	float b = (float)luaL_optnumber(L, 5, a);
+
+	int points;
+	if (lua_isnoneornil(L, 6))
+		points = a + b > 30 ? (int)((a + b) / 2) : 15;
+	else
+		points = (int) luaL_checknumber(L, 6);
+
+	instance()->ellipse(mode, x, y, a, b, points);
 	return 0;
 }
 
@@ -1407,7 +1630,7 @@ int w_arc(lua_State *L)
 	if (lua_isnoneornil(L, 7))
 		points = radius > 10 ? (int)(radius) : 10;
 	else
-		points = luaL_checkint(L, 7);
+		points = (int) luaL_checknumber(L, 7);
 
 	instance()->arc(mode, x, y, radius, angle1, angle2, points);
 	return 0;
@@ -1426,7 +1649,7 @@ int w_polygon(lua_State *L)
 	float *coords;
 	if (args == 1 && lua_istable(L, 2))
 	{
-		args = (int) lua_objlen(L, 2);
+		args = (int) luax_objlen(L, 2);
 		is_table = true;
 	}
 
@@ -1599,6 +1822,7 @@ static const luaL_Reg functions[] =
 	{ "line", w_line },
 	{ "rectangle", w_rectangle },
 	{ "circle", w_circle },
+	{ "ellipse", w_ellipse },
 	{ "arc", w_arc },
 
 	{ "polygon", w_polygon },
@@ -1648,7 +1872,7 @@ extern "C" int luaopen_love_graphics(lua_State *L)
 
 	int n = luax_register_module(L, w);
 
-	if (luaL_loadbuffer(L, (const char *)graphics_lua, sizeof(graphics_lua), "graphics.lua") == 0)
+	if (luaL_loadbuffer(L, (const char *)graphics_lua, sizeof(graphics_lua), "wrap_Graphics.lua") == 0)
 		lua_call(L, 0, 0);
 
 	return n;

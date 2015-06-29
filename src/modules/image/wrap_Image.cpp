@@ -39,13 +39,30 @@ int w_newImageData(lua_State *L)
 	// Case 1: Integers.
 	if (lua_isnumber(L, 1))
 	{
-		int w = luaL_checkint(L, 1);
-		int h = luaL_checkint(L, 2);
+		int w = (int) luaL_checknumber(L, 1);
+		int h = (int) luaL_checknumber(L, 2);
 		if (w <= 0 || h <= 0)
 			return luaL_error(L, "Invalid image size.");
 
+		size_t numbytes = 0;
+		const char *bytes = nullptr;
+
+		if (!lua_isnoneornil(L, 3))
+			bytes = luaL_checklstring(L, 3, &numbytes);
+
 		ImageData *t = nullptr;
 		luax_catchexcept(L, [&](){ t = instance()->newImageData(w, h); });
+
+		if (bytes)
+		{
+			if (numbytes != t->getSize())
+			{
+				t->release();
+				return luaL_error(L, "The size of the raw byte string must match the ImageData's actual size in bytes.");
+			}
+
+			memcpy(t->getData(), bytes, t->getSize());
+		}
 
 		luax_pushtype(L, IMAGE_IMAGE_DATA_ID, t);
 		t->release();
@@ -58,7 +75,7 @@ int w_newImageData(lua_State *L)
 	ImageData *t = nullptr;
 	luax_catchexcept(L,
 		[&]() { t = instance()->newImageData(data); },
-		[&]() { data->release(); }
+		[&](bool) { data->release(); }
 	);
 
 	luax_pushtype(L, IMAGE_IMAGE_DATA_ID, t);
@@ -73,7 +90,7 @@ int w_newCompressedData(lua_State *L)
 	CompressedImageData *t = nullptr;
 	luax_catchexcept(L,
 		[&]() { t = instance()->newCompressedData(data); },
-		[&]() { data->release(); }
+		[&](bool) { data->release(); }
 	);
 
 	luax_pushtype(L, IMAGE_COMPRESSED_IMAGE_DATA_ID, t);
