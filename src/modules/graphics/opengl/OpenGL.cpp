@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2015 LOVE Development Team
+ * Copyright (c) 2006-2016 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -89,6 +89,14 @@ bool OpenGL::initContext()
 	initOpenGLFunctions();
 	initVendor();
 	initMatrices();
+
+	bugs = {};
+
+#if defined(LOVE_WINDOWS) || defined(LOVE_LINUX)
+	// See the comment in OpenGL.h.
+	if (getVendor() == VENDOR_AMD)
+		bugs.clearRequiresDriverTextureStateUpdate = true;
+#endif
 
 	contextInitialized = true;
 

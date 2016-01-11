@@ -1,5 +1,5 @@
 --[[
-Copyright (c) 2006-2015 LOVE Development Team
+Copyright (c) 2006-2016 LOVE Development Team
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
@@ -586,6 +586,9 @@ function love.errhand(msg)
 		love.mouse.setVisible(true)
 		love.mouse.setGrabbed(false)
 		love.mouse.setRelativeMode(false)
+		if love.mouse.hasCursor() then
+			love.mouse.setCursor()
+		end
 	end
 	if love.joystick then
 		-- Stop all joystick vibrations.

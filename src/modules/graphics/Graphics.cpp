@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2015 LOVE Development Team
+ * Copyright (c) 2006-2016 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -205,6 +205,8 @@ StringMap<Graphics::BlendMode, Graphics::BLEND_MAX_ENUM>::Entry Graphics::blendM
 	{ "add",      BLEND_ADD      },
 	{ "subtract", BLEND_SUBTRACT },
 	{ "multiply", BLEND_MULTIPLY },
+	{ "lighten",  BLEND_LIGHTEN  },
+	{ "darken",   BLEND_DARKEN   },
 	{ "screen",   BLEND_SCREEN   },
 	{ "replace",  BLEND_REPLACE  },
 };
@@ -265,6 +267,7 @@ StringMap<Graphics::Support, Graphics::SUPPORT_MAX_ENUM>::Entry Graphics::suppor
 {
 	{ "multicanvasformats", SUPPORT_MULTI_CANVAS_FORMATS },
 	{ "clampzero", SUPPORT_CLAMP_ZERO },
+	{ "lighten", SUPPORT_LIGHTEN },
 };
 
 StringMap<Graphics::Support, Graphics::SUPPORT_MAX_ENUM> Graphics::support(Graphics::supportEntries, sizeof(Graphics::supportEntries));
