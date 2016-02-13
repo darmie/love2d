@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2015 LOVE Development Team
+ * Copyright (c) 2006-2016 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -257,7 +257,7 @@ public:
 	 * and body2.
 	 **/
 	MotorJoint *newMotorJoint(Body *body1, Body *body2);
-	MotorJoint *newMotorJoint(Body *body1, Body *body2, float correctionFactor);
+	MotorJoint *newMotorJoint(Body *body1, Body *body2, float correctionFactor, bool collideConnected);
 
 	/**
 	 * Creates a new Fixture attaching shape to body.

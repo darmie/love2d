@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2015 LOVE Development Team
+ * Copyright (c) 2006-2016 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -42,7 +42,7 @@ MotorJoint::MotorJoint(Body *body1, Body *body2)
 	joint = (b2MotorJoint *) createJoint(&def);
 }
 
-MotorJoint::MotorJoint(Body *body1, Body *body2, float correctionFactor)
+MotorJoint::MotorJoint(Body *body1, Body *body2, float correctionFactor, bool collideConnected)
 	: Joint(body1, body2)
 	, joint(NULL)
 {
@@ -50,6 +50,7 @@ MotorJoint::MotorJoint(Body *body1, Body *body2, float correctionFactor)
 
 	def.Initialize(body1->body, body2->body);
 	def.correctionFactor = correctionFactor;
+	def.collideConnected = collideConnected;
 
 	joint = (b2MotorJoint *) createJoint(&def);
 }

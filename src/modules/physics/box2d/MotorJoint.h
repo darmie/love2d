@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2015 LOVE Development Team
+ * Copyright (c) 2006-2016 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -41,7 +41,7 @@ class MotorJoint : public Joint
 public:
 
 	MotorJoint(Body *body1, Body* body2);
-	MotorJoint(Body *body1, Body* body2, float correctionFactor);
+	MotorJoint(Body *body1, Body* body2, float correctionFactor, bool collideConnected);
 	virtual ~MotorJoint();
 
 	/// Set/get the target linear offset, in frame A, in meters.
@@ -69,7 +69,7 @@ public:
 
 	/// Get the position correction factor in the range [0,1].
 	float getCorrectionFactor() const;
-	
+
 private:
 
 	// The Box2D MotorJoint object.
