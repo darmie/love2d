@@ -21,6 +21,9 @@
 // LOVE
 #include "MathModule.h"
 #include "common/Vector.h"
+#include "common/b64.h"
+#include "common/int.h"
+#include "common/StringMap.h"
 #include "BezierCurve.h"
 
 // STL
@@ -34,78 +37,135 @@ using love::Vertex;
 
 namespace
 {
-	// check if an angle is oriented counter clockwise
-	inline bool is_oriented_ccw(const Vertex &a, const Vertex &b, const Vertex &c)
+
+static const char hexchars[] = "0123456789abcdef";
+
+char *bytesToHex(const love::uint8 *src, size_t srclen, size_t &dstlen)
+{
+	dstlen = srclen * 2;
+
+	if (dstlen == 0)
+		return nullptr;
+
+	char *dst = nullptr;
+	try
 	{
-		// return det(b-a, c-a) >= 0
-		return ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) >= 0;
+		dst = new char[dstlen + 1];
+	}
+	catch (std::exception &)
+	{
+		throw love::Exception("Out of memory.");
 	}
 
-	// check if a and b are on the same side of the line c->d
-	bool on_same_side(const Vertex &a, const Vertex &b, const Vertex &c, const Vertex &d)
+	for (size_t i = 0; i < srclen; i++)
 	{
-		float px = d.x - c.x, py = d.y - c.y;
-		// return det(p, a-c) * det(p, b-c) >= 0
-		float l = px * (a.y - c.y) - py * (a.x - c.x);
-		float m = px * (b.y - c.y) - py * (b.x - c.x);
-		return l * m >= 0;
+		love::uint8 b = src[i];
+		dst[i * 2 + 0] = hexchars[b >> 4];
+		dst[i * 2 + 1] = hexchars[b & 0xF];
 	}
 
-	// checks is p is contained in the triangle abc
-	inline bool point_in_triangle(const Vertex &p, const Vertex &a, const Vertex &b, const Vertex &c)
-	{
-		return on_same_side(p,a, b,c) && on_same_side(p,b, a,c) && on_same_side(p,c, a,b);
-	}
-
-	// checks if any vertex in `vertices' is in the triangle abc.
-	bool any_point_in_triangle(const list<const Vertex *> &vertices, const Vertex &a, const Vertex &b, const Vertex &c)
-	{
-		list<const Vertex *>::const_iterator it, end = vertices.end();
-		for (it = vertices.begin(); it != end; ++it)
-		{
-			const Vertex *p = *it;
-			if ((p != &a) && (p != &b) && (p != &c) && point_in_triangle(*p, a,b,c)) // oh god...
-				return true;
-		}
-
-		return false;
-	}
-
-	inline bool is_ear(const Vertex &a, const Vertex &b, const Vertex &c, const list<const Vertex *> &vertices)
-	{
-		return is_oriented_ccw(a,b,c) && !any_point_in_triangle(vertices, a,b,c);
-	}
+	dst[dstlen] = '\0';
+	return dst;
 }
+
+love::uint8 nibble(char c)
+{
+	if (c >= '0' && c <= '9')
+		return (love::uint8) (c - '0');
+
+	if (c >= 'A' && c <= 'F')
+		return (love::uint8) (c - 'A' + 0x0a);
+
+	if (c >= 'a' && c <= 'f')
+		return (love::uint8) (c - 'a' + 0x0a);
+
+	return 0;
+}
+
+love::uint8 *hexToBytes(const char *src, size_t srclen, size_t &dstlen)
+{
+	if (srclen >= 2 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X'))
+	{
+		src += 2;
+		srclen -= 2;
+	}
+
+	dstlen = (srclen + 1) / 2;
+
+	if (dstlen == 0)
+		return nullptr;
+
+	love::uint8 *dst = nullptr;
+	try
+	{
+		dst = new love::uint8[dstlen];
+	}
+	catch (std::exception &)
+	{
+		throw love::Exception("Out of memory.");
+	}
+
+	for (size_t i = 0; i < dstlen; i++)
+	{
+		dst[i] = nibble(src[i * 2]) << 4;
+
+		if (i * 2 + 1 < srclen)
+			dst[i] |= nibble(src[i * 2 + 1]);
+	}
+
+	return dst;
+}
+
+// check if an angle is oriented counter clockwise
+inline bool is_oriented_ccw(const Vertex &a, const Vertex &b, const Vertex &c)
+{
+	// return det(b-a, c-a) >= 0
+	return ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) >= 0;
+}
+
+// check if a and b are on the same side of the line c->d
+bool on_same_side(const Vertex &a, const Vertex &b, const Vertex &c, const Vertex &d)
+{
+	float px = d.x - c.x, py = d.y - c.y;
+	// return det(p, a-c) * det(p, b-c) >= 0
+	float l = px * (a.y - c.y) - py * (a.x - c.x);
+	float m = px * (b.y - c.y) - py * (b.x - c.x);
+	return l * m >= 0;
+}
+
+// checks is p is contained in the triangle abc
+inline bool point_in_triangle(const Vertex &p, const Vertex &a, const Vertex &b, const Vertex &c)
+{
+	return on_same_side(p,a, b,c) && on_same_side(p,b, a,c) && on_same_side(p,c, a,b);
+}
+
+// checks if any vertex in `vertices' is in the triangle abc.
+bool any_point_in_triangle(const list<const Vertex *> &vertices, const Vertex &a, const Vertex &b, const Vertex &c)
+{
+	list<const Vertex *>::const_iterator it, end = vertices.end();
+	for (it = vertices.begin(); it != end; ++it)
+	{
+		const Vertex *p = *it;
+		if ((p != &a) && (p != &b) && (p != &c) && point_in_triangle(*p, a,b,c)) // oh god...
+			return true;
+	}
+
+	return false;
+}
+
+inline bool is_ear(const Vertex &a, const Vertex &b, const Vertex &c, const list<const Vertex *> &vertices)
+{
+	return is_oriented_ccw(a,b,c) && !any_point_in_triangle(vertices, a,b,c);
+}
+
+} // anonymous namespace
 
 namespace love
 {
 namespace math
 {
 
-Math Math::instance;
-
-Math::Math()
-	: rng()
-{
-	// prevent the runtime from free()-ing this
-	retain();
-}
-
-Math::~Math()
-{
-}
-
-RandomGenerator *Math::newRandomGenerator()
-{
-	return new RandomGenerator();
-}
-
-BezierCurve *Math::newBezierCurve(const vector<Vector> &points)
-{
-	return new BezierCurve(points);
-}
-
-vector<Triangle> Math::triangulate(const vector<Vertex> &polygon)
+vector<Triangle> triangulate(const vector<Vertex> &polygon)
 {
 	if (polygon.size() < 3)
 		throw love::Exception("Not a polygon");
@@ -170,7 +230,7 @@ vector<Triangle> Math::triangulate(const vector<Vertex> &polygon)
 	return triangles;
 }
 
-bool Math::isConvex(const std::vector<Vertex> &polygon)
+bool isConvex(const std::vector<Vertex> &polygon)
 {
 	if (polygon.size() < 3)
 		return false;
@@ -200,7 +260,7 @@ bool Math::isConvex(const std::vector<Vertex> &polygon)
 /**
  * http://en.wikipedia.org/wiki/SRGB#The_reverse_transformation
  **/
-float Math::gammaToLinear(float c) const
+float gammaToLinear(float c)
 {
 	if (c <= 0.04045f)
 		return c / 12.92f;
@@ -211,7 +271,7 @@ float Math::gammaToLinear(float c) const
 /**
  * http://en.wikipedia.org/wiki/SRGB#The_forward_transformation_.28CIE_xyY_or_CIE_XYZ_to_sRGB.29
  **/
-float Math::linearToGamma(float c) const
+float linearToGamma(float c)
 {
 	if (c <= 0.0031308f)
 		return c * 12.92f;
@@ -219,12 +279,12 @@ float Math::linearToGamma(float c) const
 		return 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
 }
 
-CompressedData *Math::compress(Compressor::Format format, love::Data *rawdata, int level)
+CompressedData *compress(Compressor::Format format, love::Data *rawdata, int level)
 {
 	return compress(format, (const char *) rawdata->getData(), rawdata->getSize(), level);
 }
 
-CompressedData *Math::compress(Compressor::Format format, const char *rawbytes, size_t rawsize, int level)
+CompressedData *compress(Compressor::Format format, const char *rawbytes, size_t rawsize, int level)
 {
 	Compressor *compressor = Compressor::getCompressor(format);
 
@@ -249,7 +309,7 @@ CompressedData *Math::compress(Compressor::Format format, const char *rawbytes, 
 	return data;
 }
 
-char *Math::decompress(CompressedData *data, size_t &decompressedsize)
+char *decompress(CompressedData *data, size_t &decompressedsize)
 {
 	size_t rawsize = data->getDecompressedSize();
 
@@ -260,7 +320,7 @@ char *Math::decompress(CompressedData *data, size_t &decompressedsize)
 	return rawbytes;
 }
 
-char *Math::decompress(Compressor::Format format, const char *cbytes, size_t compressedsize, size_t &rawsize)
+char *decompress(Compressor::Format format, const char *cbytes, size_t compressedsize, size_t &rawsize)
 {
 	Compressor *compressor = Compressor::getCompressor(format);
 
@@ -268,6 +328,71 @@ char *Math::decompress(Compressor::Format format, const char *cbytes, size_t com
 		throw love::Exception("Invalid compression format.");
 
 	return compressor->decompress(format, cbytes, compressedsize, rawsize);
+}
+
+char *encode(EncodeFormat format, const char *src, size_t srclen, size_t &dstlen, size_t linelen)
+{
+	switch (format)
+	{
+	case ENCODE_BASE64:
+	default:
+		return b64_encode(src, srclen, linelen, dstlen);
+	case ENCODE_HEX:
+		return bytesToHex((const uint8 *) src, srclen, dstlen);
+	}
+}
+
+char *decode(EncodeFormat format, const char *src, size_t srclen, size_t &dstlen)
+{
+	switch (format)
+	{
+	case ENCODE_BASE64:
+	default:
+		return b64_decode(src, srclen, dstlen);
+	case ENCODE_HEX:
+		return (char *) hexToBytes(src, srclen, dstlen);
+	}
+}
+
+Math Math::instance;
+
+Math::Math()
+	: rng()
+{
+	// prevent the runtime from free()-ing this
+	retain();
+}
+
+Math::~Math()
+{
+}
+
+RandomGenerator *Math::newRandomGenerator()
+{
+	return new RandomGenerator();
+}
+
+BezierCurve *Math::newBezierCurve(const vector<Vector> &points)
+{
+	return new BezierCurve(points);
+}
+
+static StringMap<EncodeFormat, ENCODE_MAX_ENUM>::Entry encoderEntries[] =
+{
+	{ "base64", ENCODE_BASE64 },
+	{ "hex",    ENCODE_HEX },
+};
+
+static StringMap<EncodeFormat, ENCODE_MAX_ENUM> encoders(encoderEntries, sizeof(encoderEntries));
+
+bool getConstant(const char *in, EncodeFormat &out)
+{
+	return encoders.find(in, out);
+}
+
+bool getConstant(EncodeFormat in, const char *&out)
+{
+	return encoders.find(in, out);
 }
 
 } // math

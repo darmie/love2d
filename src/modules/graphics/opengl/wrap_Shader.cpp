@@ -155,21 +155,15 @@ static int w__Shader_sendFloat(lua_State *L, bool colors)
 	if (!values)
 		return luaL_error(L, "Error in arguments.");
 
-	if (colors)
+	if (colors && love::graphics::isGammaCorrect())
 	{
-		bool gammacorrect = love::graphics::isGammaCorrect();
-		const auto &m = love::math::Math::instance;
+		// the fourth component (alpha) is always already linear, if it exists.
+		int ncomponents = std::min((int) dimension, 3);
 
 		for (int i = 0; i < count; i++)
 		{
-			for (int j = 0; j < (int) dimension; j++)
-			{
-				// the fourth component (alpha) is always already linear, if it exists.
-				if (gammacorrect && j < 3)
-					values[i * dimension + j] = m.gammaToLinear(values[i * dimension + j] / 255.0f);
-				else
-					values[i * dimension + j] /= 255.0f;
-			}
+			for (int j = 0; j < ncomponents; j++)
+				values[i * dimension + j] = math::gammaToLinear(values[i * dimension + j]);
 		}
 	}
 
