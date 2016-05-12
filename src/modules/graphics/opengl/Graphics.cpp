@@ -441,11 +441,9 @@ void Graphics::reset()
 
 void Graphics::clear(Colorf c)
 {
-	Colorf nc = Colorf(c.r/255.0f, c.g/255.0f, c.b/255.0f, c.a/255.0f);
+	gammaCorrectColor(c);
 
-	gammaCorrectColor(nc);
-
-	glClearColor(nc.r, nc.g, nc.b, nc.a);
+	glClearColor(c.r, c.g, c.b, c.a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	if (gl.bugs.clearRequiresDriverTextureStateUpdate && Shader::current)
@@ -486,7 +484,7 @@ void Graphics::clear(const std::vector<OptionalColorf> &colors)
 		if (!colors[i].enabled)
 			continue;
 
-		GLfloat c[] = {colors[i].r/255.f, colors[i].g/255.f, colors[i].b/255.f, colors[i].a/255.f};
+		GLfloat c[] = {colors[i].r, colors[i].g, colors[i].b, colors[i].a};
 
 		// TODO: Investigate a potential bug on AMD drivers in Windows/Linux
 		// which apparently causes the clear color to be incorrect when mixed
@@ -494,7 +492,7 @@ void Graphics::clear(const std::vector<OptionalColorf> &colors)
 		if (isGammaCorrect())
 		{
 			for (int i = 0; i < 3; i++)
-				c[i] = math::Math::instance.gammaToLinear(c[i]);
+				c[i] = math::gammaToLinear(c[i]);
 		}
 
 		if (GLAD_ES_VERSION_3_0 || GLAD_VERSION_3_0)
@@ -954,11 +952,10 @@ bool Graphics::isGammaCorrect() const
 
 void Graphics::setColor(Colorf c)
 {
-	Colorf nc = Colorf(c.r/255.0f, c.g/255.0f, c.b/255.0f, c.a/255.0f);
-
+	Colorf nc = c;
 	gammaCorrectColor(nc);
-
 	glVertexAttrib4f(ATTRIB_CONSTANTCOLOR, nc.r, nc.g, nc.b, nc.a);
+
 	states.back().color = c;
 }
 
@@ -1119,7 +1116,7 @@ void Graphics::setBlendMode(BlendMode mode, BlendAlpha alphamode)
 		{
 		case BLEND_LIGHTEN:
 		case BLEND_DARKEN:
-		/*case BLEND_MULTIPLY:*/ // FIXME: Uncomment for 0.11.0
+		case BLEND_MULTIPLY:
 			getConstant(mode, modestr);
 			throw love::Exception("The '%s' blend mode must be used with premultiplied alpha.", modestr);
 			break;
