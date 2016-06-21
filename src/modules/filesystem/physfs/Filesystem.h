@@ -64,9 +64,6 @@ public:
 
 	love::filesystem::File *newFile(const char *filename) const;
 
-	FileData *newFileData(void *data, unsigned int size, const char *filename) const;
-	FileData *newFileData(const char *b64, const char *filename) const;
-
 	const char *getWorkingDirectory();
 	std::string getUserDirectory();
 	std::string getAppdataDirectory();
@@ -97,6 +94,7 @@ public:
 	bool areSymlinksEnabled() const;
 
 	std::vector<std::string> &getRequirePath();
+	std::vector<std::string> &getCRequirePath();
 
 	void allowMountingForPath(const std::string &path);
 
@@ -127,6 +125,7 @@ private:
 
 	// Search path for require
 	std::vector<std::string> requirePath;
+	std::vector<std::string> cRequirePath;
 
 	std::vector<std::string> allowedMountPaths;
 

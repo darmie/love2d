@@ -18,21 +18,21 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_VERSION_H
-#define LOVE_VERSION_H
+#ifndef LOVE_HALF_FLOAT_H
+#define LOVE_HALF_FLOAT_H
+
+#include "int.h"
 
 namespace love
 {
 
-// Version stuff.
-#define LOVE_VERSION_STRING "0.11.0"
-static const int VERSION_MAJOR = 0;
-static const int VERSION_MINOR = 11;
-static const int VERSION_REV = 0;
-static const char *VERSION = LOVE_VERSION_STRING;
-static const char *VERSION_COMPATIBILITY[] =  { VERSION, 0 };
-static const char *VERSION_CODENAME = "";
+typedef uint16 half;
+
+void halfInit();
+
+float halfToFloat(half h);
+half floatToHalf(float f);
 
 } // love
 
-#endif // LOVE_VERSION_H
+#endif // LOVE_HALF_FLOAT_H
