@@ -18,21 +18,39 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_VERSION_H
-#define LOVE_VERSION_H
+#ifndef LOVE_IMAGE_MAGPIE_EXR_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_EXR_HANDLER_H
+
+#include "FormatHandler.h"
 
 namespace love
 {
+namespace image
+{
+namespace magpie
+{
 
-// Version stuff.
-#define LOVE_VERSION_STRING "0.11.0"
-static const int VERSION_MAJOR = 0;
-static const int VERSION_MINOR = 11;
-static const int VERSION_REV = 0;
-static const char *VERSION = LOVE_VERSION_STRING;
-static const char *VERSION_COMPATIBILITY[] =  { VERSION, 0 };
-static const char *VERSION_CODENAME = "";
+/**
+ * Interface between ImageData and TinyEXR library, for decoding exr files.
+ **/
+class EXRHandler : public FormatHandler
+{
+public:
 
+	// Implements FormatHandler.
+
+	virtual bool canDecode(love::filesystem::FileData *data);
+	virtual bool canEncode(ImageData::Format rawFormat, ImageData::EncodedFormat encodedFormat);
+
+	virtual DecodedImage decode(love::filesystem::FileData *data);
+	virtual EncodedImage encode(const DecodedImage &img, ImageData::EncodedFormat format);
+
+	virtual void free(unsigned char *mem);
+
+}; // EXRHandler
+
+} // magpie
+} // image
 } // love
 
-#endif // LOVE_VERSION_H
+#endif // LOVE_IMAGE_MAGPIE_EXR_HANDLER_H
