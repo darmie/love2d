@@ -65,7 +65,7 @@ int w_clear(lua_State *L)
 	Colorf color;
 
 	if (lua_isnoneornil(L, 1))
-		color.set(0, 0, 0, 0);
+		color.set(0.0, 0.0, 0.0, 0.0);
 	else if (lua_istable(L, 1))
 	{
 		std::vector<Graphics::OptionalColorf> colors((size_t) lua_gettop(L));
@@ -85,7 +85,7 @@ int w_clear(lua_State *L)
 			colors[i].r = (float) luaL_checknumber(L, -4);
 			colors[i].g = (float) luaL_checknumber(L, -3);
 			colors[i].b = (float) luaL_checknumber(L, -2);
-			colors[i].a = (float) luaL_optnumber(L, -1, 255);
+			colors[i].a = (float) luaL_optnumber(L, -1, 1.0);
 
 			lua_pop(L, 4);
 		}
@@ -98,7 +98,7 @@ int w_clear(lua_State *L)
 		color.r = (float) luaL_checknumber(L, 1);
 		color.g = (float) luaL_checknumber(L, 2);
 		color.b = (float) luaL_checknumber(L, 3);
-		color.a = (float) luaL_optnumber(L, 4, 255);
+		color.a = (float) luaL_optnumber(L, 4, 1.0);
 	}
 
 	luax_catchexcept(L, [&]() { instance()->clear(color); });
@@ -729,10 +729,10 @@ static Mesh *newStandardMesh(lua_State *L)
 			v.s = (float) luaL_optnumber(L, -6, 0.0);
 			v.t = (float) luaL_optnumber(L, -5, 0.0);
 
-			v.r = (unsigned char) luaL_optnumber(L, -4, 255);
-			v.g = (unsigned char) luaL_optnumber(L, -3, 255);
-			v.b = (unsigned char) luaL_optnumber(L, -2, 255);
-			v.a = (unsigned char) luaL_optnumber(L, -1, 255);
+			v.r = (unsigned char) (luaL_optnumber(L, -4, 1.0) * 255.0);
+			v.g = (unsigned char) (luaL_optnumber(L, -3, 1.0) * 255.0);
+			v.b = (unsigned char) (luaL_optnumber(L, -2, 1.0) * 255.0);
+			v.a = (unsigned char) (luaL_optnumber(L, -1, 1.0) * 255.0);
 
 			lua_pop(L, 9);
 			vertices.push_back(v);
@@ -940,7 +940,7 @@ int w_setColor(lua_State *L)
 		c.r = (float) luaL_checknumber(L, -4);
 		c.g = (float) luaL_checknumber(L, -3);
 		c.b = (float) luaL_checknumber(L, -2);
-		c.a = (float) luaL_optnumber(L, -1, 255);
+		c.a = (float) luaL_optnumber(L, -1, 1.0);
 
 		lua_pop(L, 4);
 	}
@@ -949,7 +949,7 @@ int w_setColor(lua_State *L)
 		c.r = (float) luaL_checknumber(L, 1);
 		c.g = (float) luaL_checknumber(L, 2);
 		c.b = (float) luaL_checknumber(L, 3);
-		c.a = (float) luaL_optnumber(L, 4, 255);
+		c.a = (float) luaL_optnumber(L, 4, 1.0);
 	}
 	instance()->setColor(c);
 	return 0;
@@ -976,7 +976,7 @@ int w_setBackgroundColor(lua_State *L)
 		c.r = (float) luaL_checknumber(L, -4);
 		c.g = (float) luaL_checknumber(L, -3);
 		c.b = (float) luaL_checknumber(L, -2);
-		c.a = (float) luaL_optnumber(L, -1, 255);
+		c.a = (float) luaL_optnumber(L, -1, 1.0);
 
 		lua_pop(L, 4);
 	}
@@ -985,7 +985,7 @@ int w_setBackgroundColor(lua_State *L)
 		c.r = (float) luaL_checknumber(L, 1);
 		c.g = (float) luaL_checknumber(L, 2);
 		c.b = (float) luaL_checknumber(L, 3);
-		c.a = (float) luaL_optnumber(L, 4, 255);
+		c.a = (float) luaL_optnumber(L, 4, 1.0);
 	}
 	instance()->setBackgroundColor(c);
 	return 0;
@@ -1416,13 +1416,32 @@ int w_getCanvasFormats(lua_State *L)
 	return 1;
 }
 
+int w_getRawImageFormats(lua_State *L)
+{
+	lua_createtable(L, 0, (int) image::ImageData::FORMAT_MAX_ENUM);
+
+	for (int i = 0; i < (int) image::ImageData::FORMAT_MAX_ENUM; i++)
+	{
+		auto format = (image::ImageData::Format) i;
+		const char *name = nullptr;
+
+		if (!image::ImageData::getConstant(format, name))
+			continue;
+
+		luax_pushboolean(L, Image::hasTextureSupport(format));
+		lua_setfield(L, -2, name);
+	}
+
+	return 1;
+}
+
 int w_getCompressedImageFormats(lua_State *L)
 {
 	lua_createtable(L, 0, (int) image::CompressedImageData::FORMAT_MAX_ENUM);
 
 	for (int i = 0; i < (int) image::CompressedImageData::FORMAT_MAX_ENUM; i++)
 	{
-		image::CompressedImageData::Format format = (image::CompressedImageData::Format) i;
+		auto format = (image::CompressedImageData::Format) i;
 		const char *name = nullptr;
 
 		if (format == image::CompressedImageData::FORMAT_UNKNOWN)
@@ -1652,10 +1671,10 @@ int w_points(lua_State *L)
 				coords[i * 2 + 0] = luax_tofloat(L, -6);
 				coords[i * 2 + 1] = luax_tofloat(L, -5);
 
-				colors[i * 4 + 0] = (uint8) luaL_optnumber(L, -4, 255);
-				colors[i * 4 + 1] = (uint8) luaL_optnumber(L, -3, 255);
-				colors[i * 4 + 2] = (uint8) luaL_optnumber(L, -2, 255);
-				colors[i * 4 + 3] = (uint8) luaL_optnumber(L, -1, 255);
+				colors[i * 4 + 0] = (uint8) (luaL_optnumber(L, -4, 1.0) * 255.0);
+				colors[i * 4 + 1] = (uint8) (luaL_optnumber(L, -3, 1.0) * 255.0);
+				colors[i * 4 + 2] = (uint8) (luaL_optnumber(L, -2, 1.0) * 255.0);
+				colors[i * 4 + 3] = (uint8) (luaL_optnumber(L, -1, 1.0) * 255.0);
 
 				lua_pop(L, 7);
 			}
@@ -1744,13 +1763,14 @@ int w_rectangle(lua_State *L)
 	float rx = (float)luaL_optnumber(L, 6, 0.0);
 	float ry = (float)luaL_optnumber(L, 7, rx);
 
-	int points;
 	if (lua_isnoneornil(L, 8))
-		points = std::max(rx, ry) > 20.0 ? (int)(std::max(rx, ry) / 2) : 10;
+		instance()->rectangle(mode, x, y, w, h, rx, ry);
 	else
-		points = (int) luaL_checknumber(L, 8);
+	{
+		int points = (int) luaL_checknumber(L, 8);
+		instance()->rectangle(mode, x, y, w, h, rx, ry, points);
+	}
 
-	instance()->rectangle(mode, x, y, w, h, rx, ry, points);
 	return 0;
 }
 
@@ -1764,13 +1784,15 @@ int w_circle(lua_State *L)
 	float x = (float)luaL_checknumber(L, 2);
 	float y = (float)luaL_checknumber(L, 3);
 	float radius = (float)luaL_checknumber(L, 4);
-	int points;
-	if (lua_isnoneornil(L, 5))
-		points = radius > 10 ? (int)(radius) : 10;
-	else
-		points = (int) luaL_checknumber(L, 5);
 
-	instance()->circle(mode, x, y, radius, points);
+	if (lua_isnoneornil(L, 5))
+		instance()->circle(mode, x, y, radius);
+	else
+	{
+		int points = (int) luaL_checknumber(L, 5);
+		instance()->circle(mode, x, y, radius, points);
+	}
+
 	return 0;
 }
 
@@ -1786,13 +1808,14 @@ int w_ellipse(lua_State *L)
 	float a = (float)luaL_checknumber(L, 4);
 	float b = (float)luaL_optnumber(L, 5, a);
 
-	int points;
 	if (lua_isnoneornil(L, 6))
-		points = a + b > 30 ? (int)((a + b) / 2) : 15;
+		instance()->ellipse(mode, x, y, a, b);
 	else
-		points = (int) luaL_checknumber(L, 6);
+	{
+		int points = (int) luaL_checknumber(L, 6);
+		instance()->ellipse(mode, x, y, a, b, points);
+	}
 
-	instance()->ellipse(mode, x, y, a, b, points);
 	return 0;
 }
 
@@ -1822,17 +1845,14 @@ int w_arc(lua_State *L)
 	float angle1 = (float) luaL_checknumber(L, startidx + 3);
 	float angle2 = (float) luaL_checknumber(L, startidx + 4);
 
-	int points = (int) radius;
-	float angle = fabs(angle1 - angle2);
+	if (lua_isnoneornil(L, startidx + 5))
+		instance()->arc(drawmode, arcmode, x, y, radius, angle1, angle2);
+	else
+	{
+		int points = (int) luaL_checknumber(L, startidx + 5);
+		instance()->arc(drawmode, arcmode, x, y, radius, angle1, angle2, points);
+	}
 
-	// The amount of points is based on the fraction of the circle created by the arc.
-	if (angle < 2.0f * (float) LOVE_M_PI)
-		points *= angle / (2.0f * (float) LOVE_M_PI);
-
-	points = std::max(points, 10);
-	points = (int) luaL_optnumber(L, startidx + 5, points);
-
-	instance()->arc(drawmode, arcmode, x, y, radius, angle1, angle2, points);
 	return 0;
 }
 
@@ -1996,6 +2016,7 @@ static const luaL_Reg functions[] =
 
 	{ "getSupported", w_getSupported },
 	{ "getCanvasFormats", w_getCanvasFormats },
+	{ "getRawImageFormats", w_getRawImageFormats },
 	{ "getCompressedImageFormats", w_getCompressedImageFormats },
 	{ "getRendererInfo", w_getRendererInfo },
 	{ "getSystemLimits", w_getSystemLimits },

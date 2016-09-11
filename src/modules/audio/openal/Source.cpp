@@ -85,7 +85,6 @@ Source::Source(Pool *pool, love::sound::SoundData *soundData)
 	, volume(1.0f)
 	, relative(false)
 	, looping(false)
-	, paused(false)
 	, minVolume(0.0f)
 	, maxVolume(1.0f)
 	, referenceDistance(1.0f)
@@ -122,7 +121,6 @@ Source::Source(Pool *pool, love::sound::Decoder *decoder)
 	, volume(1.0f)
 	, relative(false)
 	, looping(false)
-	, paused(false)
 	, minVolume(0.0f)
 	, maxVolume(1.0f)
 	, referenceDistance(1.0f)
@@ -158,7 +156,6 @@ Source::Source(const Source &s)
 	, volume(s.volume)
 	, relative(s.relative)
 	, looping(s.looping)
-	, paused(false)
 	, minVolume(s.minVolume)
 	, maxVolume(s.maxVolume)
 	, referenceDistance(s.referenceDistance)
@@ -202,23 +199,14 @@ love::audio::Source *Source::clone()
 
 bool Source::play()
 {
-	if (valid && paused)
-	{
-		pool->resume(this);
-		return true;
-	}
-
-	valid = pool->play(this, source);
+	valid = pool->play(this);
 	return valid;
 }
 
 void Source::stop()
 {
-	if (!isStopped())
-	{
+	if (valid)
 		pool->stop(this);
-		pool->softRewind(this);
-	}
 }
 
 void Source::pause()
@@ -226,43 +214,27 @@ void Source::pause()
 	pool->pause(this);
 }
 
-void Source::resume()
+bool Source::isPlaying() const
 {
-	pool->resume(this);
-}
+	if (!valid)
+		return false;
 
-void Source::rewind()
-{
-	pool->rewind(this);
-}
-
-bool Source::isStopped() const
-{
-	if (valid)
-	{
-		ALenum state;
-		alGetSourcei(source, AL_SOURCE_STATE, &state);
-		return (state == AL_STOPPED);
-	}
-
-	return true;
-}
-
-bool Source::isPaused() const
-{
-	if (valid)
-	{
-		ALenum state;
-		alGetSourcei(source, AL_SOURCE_STATE, &state);
-		return (state == AL_PAUSED);
-	}
-
-	return false;
+	ALenum state;
+	alGetSourcei(source, AL_SOURCE_STATE, &state);
+	return state == AL_PLAYING;
 }
 
 bool Source::isFinished() const
 {
-	return type == TYPE_STATIC ? isStopped() : (isStopped() && !isLooping() && decoder->isFinished());
+	if (!valid)
+		return false;
+
+	if (type == TYPE_STREAM && (isLooping() || !decoder->isFinished()))
+		return false;
+
+	ALenum state;
+	alGetSourcei(source, AL_SOURCE_STATE, &state);
+	return state == AL_STOPPED;
 }
 
 bool Source::update()
@@ -274,7 +246,7 @@ bool Source::update()
 	{
 		// Looping mode could have changed.
 		alSourcei(source, AL_LOOPING, isLooping() ? AL_TRUE : AL_FALSE);
-		return !isStopped();
+		return !isFinished();
 	}
 	else if (type == TYPE_STREAM && (isLooping() || !isFinished()))
 	{
@@ -362,45 +334,35 @@ float Source::getVolume() const
 
 void Source::seekAtomic(float offset, void *unit)
 {
-	if (valid)
+	bool wasPlaying = isPlaying();
+
+	// To drain all buffers
+	if (valid && type == TYPE_STREAM)
+		stopAtomic();
+
+	switch (*((Source::Unit *) unit))
 	{
-		switch (*((Source::Unit *) unit))
-		{
-		case Source::UNIT_SAMPLES:
-			if (type == TYPE_STREAM)
-			{
-				offsetSamples = offset;
-				offset /= decoder->getSampleRate();
-				offsetSeconds = offset;
-				decoder->seek(offset);
-			}
-			else
-				alSourcef(source, AL_SAMPLE_OFFSET, offset);
-			break;
-		case Source::UNIT_SECONDS:
-		default:
-			if (type == TYPE_STREAM)
-			{
-				offsetSeconds = offset;
-				decoder->seek(offset);
-				offsetSamples = offset * decoder->getSampleRate();
-			}
-			else
-				alSourcef(source, AL_SEC_OFFSET, offset);
-			break;
-		}
-		if (type == TYPE_STREAM)
-		{
-			bool waspaused = paused;
-			// Because we still have old data
-			// from before the seek in the buffers
-			// let's empty them.
-			stopAtomic();
-			playAtomic();
-			if (waspaused)
-				pauseAtomic();
-		}
+	case Source::UNIT_SAMPLES:
+		offsetSamples = offset;
+		offsetSeconds = offset / sampleRate;
+		break;
+	case Source::UNIT_SECONDS:
+	default:
+		offsetSeconds = offset;
+		offsetSamples = offset * sampleRate;
+		break;
 	}
+
+	if (type == TYPE_STREAM)
+		decoder->seek(offsetSeconds);
+	else if (valid) // Playing static source
+	{
+		alSourcef(source, AL_SAMPLE_OFFSET, offsetSamples);
+		offsetSamples = offsetSeconds = 0;
+	}
+
+	if (wasPlaying && type == TYPE_STREAM)
+		playAtomic(source);
 }
 
 void Source::seek(float offset, Source::Unit unit)
@@ -410,27 +372,24 @@ void Source::seek(float offset, Source::Unit unit)
 
 float Source::tellAtomic(void *unit) const
 {
-	if (valid)
+	float offset = 0.0f;
+
+	switch (*((Source::Unit *) unit))
 	{
-		float offset;
-		switch (*((Source::Unit *) unit))
-		{
-		case Source::UNIT_SAMPLES:
+	case Source::UNIT_SAMPLES:
+		if (valid)
 			alGetSourcef(source, AL_SAMPLE_OFFSET, &offset);
-			if (type == TYPE_STREAM) offset += offsetSamples;
-			break;
-		case Source::UNIT_SECONDS:
-		default:
-			{
-				alGetSourcef(source, AL_SAMPLE_OFFSET, &offset);
-				offset /= sampleRate;
-				if (type == TYPE_STREAM) offset += offsetSeconds;
-			}
-			break;
-		}
-		return offset;
+		offset += offsetSamples;
+		break;
+	case Source::UNIT_SECONDS:
+	default:
+		if (valid)
+			alGetSourcef(source, AL_SEC_OFFSET, &offset);
+		offset += offsetSeconds;
+		break;
 	}
-	return 0.0f;
+
+	return offset;
 }
 
 float Source::tell(Source::Unit unit)
@@ -593,7 +552,7 @@ bool Source::isLooping() const
 	return looping;
 }
 
-bool Source::playAtomic()
+void Source::prepareAtomic()
 {
 	// This Source may now be associated with an OpenAL source that still has
 	// the properties of another love Source. Let's reset it to the settings
@@ -603,6 +562,8 @@ bool Source::playAtomic()
 	if (type == TYPE_STATIC)
 	{
 		alSourcei(source, AL_BUFFER, staticBuffer->getBuffer());
+		if (offsetSamples >= 0)
+			alSourcef(source, AL_SAMPLE_OFFSET, offsetSamples);
 	}
 	else if (type == TYPE_STREAM)
 	{
@@ -622,6 +583,39 @@ bool Source::playAtomic()
 		if (usedBuffers > 0)
 			alSourceQueueBuffers(source, usedBuffers, streamBuffers);
 	}
+}
+
+void Source::teardownAtomic()
+{
+	if (type == TYPE_STATIC)
+	{
+		alSourcef(source, AL_SAMPLE_OFFSET, 0);
+	}
+	else if (type == TYPE_STREAM)
+	{
+		decoder->seek(0);
+
+		int queued = 0;
+		alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
+
+		while (queued--)
+		{
+			ALuint buffer;
+			alSourceUnqueueBuffers(source, 1, &buffer);
+		}
+	}
+
+	alSourcei(source, AL_BUFFER, AL_NONE);
+
+	toLoop = 0;
+	valid = false;
+	offsetSamples = offsetSeconds = 0;
+}
+
+bool Source::playAtomic(ALuint source)
+{
+	this->source = source;
+	prepareAtomic();
 
 	// Clear errors.
 	alGetError();
@@ -635,81 +629,104 @@ bool Source::playAtomic()
 	valid = true; //if it fails it will be set to false again
 	//but this prevents a horrible, horrible bug
 
+	if (type == TYPE_STATIC)
+		offsetSamples = offsetSeconds = 0;
+
 	return success;
 }
 
 void Source::stopAtomic()
 {
-	if (valid)
-	{
-		if (type == TYPE_STATIC)
-			alSourceStop(source);
-		else if (type == TYPE_STREAM)
-		{
-			alSourceStop(source);
-			int queued = 0;
-			alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
-
-			while (queued--)
-			{
-				ALuint buffer;
-				alSourceUnqueueBuffers(source, 1, &buffer);
-			}
-		}
-
-		alSourcei(source, AL_BUFFER, AL_NONE);
-	}
-
-	toLoop = 0;
-	valid = false;
+	if (!valid)
+		return;
+	alSourceStop(source);
+	teardownAtomic();
 }
 
 void Source::pauseAtomic()
 {
 	if (valid)
-	{
 		alSourcePause(source);
-		paused = true;
-	}
 }
 
 void Source::resumeAtomic()
 {
-	if (valid && paused)
-	{
+	if (valid && !isPlaying())
 		alSourcePlay(source);
-		paused = false;
+}
+
+bool Source::playAtomic(const std::vector<love::audio::Source*> &sources, const std::vector<ALuint> &ids, const std::vector<char> &wasPlaying)
+{
+	if (sources.size() == 0)
+		return true;
+
+	std::vector<ALuint> toPlay;
+	toPlay.reserve(sources.size());
+	for (size_t i = 0; i < sources.size(); i++)
+	{
+		if (wasPlaying[i])
+			continue;
+		Source *source = (Source*) sources[i];
+		source->source = ids[i];
+		source->prepareAtomic();
+		toPlay.push_back(ids[i]);
+	}
+
+	alGetError();
+	alSourcePlayv(toPlay.size(), &toPlay[0]);
+	bool success = alGetError() == AL_NO_ERROR;
+
+	for (auto &_source : sources)
+	{
+		Source *source = (Source*) _source;
+		source->valid = source->valid || success;
+
+		if (success && source->type == TYPE_STATIC)
+			source->offsetSamples = source->offsetSeconds = 0;
+	}
+
+	return success;
+}
+
+void Source::stopAtomic(const std::vector<love::audio::Source*> &sources)
+{
+	if (sources.size() == 0)
+		return;
+
+	std::vector<ALuint> sourceIds;
+	sourceIds.reserve(sources.size());
+	for (auto &_source : sources)
+	{
+		Source *source = (Source*) _source;
+		if (source->valid)
+			sourceIds.push_back(source->source);
+	}
+
+	alSourceStopv(sources.size(), &sourceIds[0]);
+
+	for (auto &_source : sources)
+	{
+		Source *source = (Source*) _source;
+		if (source->valid)
+			source->teardownAtomic();
 	}
 }
 
-void Source::rewindAtomic()
+void Source::pauseAtomic(const std::vector<love::audio::Source*> &sources)
 {
-	if (valid && type == TYPE_STATIC)
+	if (sources.size() == 0)
+		return;
+
+	std::vector<ALuint> sourceIds;
+	sourceIds.reserve(sources.size());
+	for (auto &_source : sources)
 	{
-		alSourceRewind(source);
-		if (!paused)
-			alSourcePlay(source);
+		Source *source = (Source*) _source;
+		if (source->valid)
+			sourceIds.push_back(source->source);
 	}
-	else if (valid && type == TYPE_STREAM)
-	{
-		bool waspaused = paused;
-		decoder->rewind();
-		// Because we still have old data
-		// from before the seek in the buffers
-		// let's empty them.
-		stopAtomic();
-		playAtomic();
-		if (waspaused)
-			pauseAtomic();
-		offsetSamples = 0;
-		offsetSeconds = 0;
-	}
-	else if (type == TYPE_STREAM)
-	{
-		decoder->rewind();
-		offsetSamples = 0;
-		offsetSeconds = 0;
-	}
+
+	alSourcePausev(sources.size(), &sourceIds[0]);
 }
 
 void Source::reset()

@@ -87,21 +87,15 @@ int w_Shader_sendFloats(lua_State *L, int startidx, Shader *shader, const Shader
 
 	float *values = _getNumbers<float>(L, startidx, shader, components, count);
 
-	if (colors)
+	if (colors && love::graphics::isGammaCorrect())
 	{
-		bool gammacorrect = love::graphics::isGammaCorrect();
-		const auto &m = love::math::Math::instance;
+		// alpha is always linear (when present).
+		int gammacomponents = std::min(components, 3);
 
 		for (int i = 0; i < count; i++)
 		{
-			for (int j = 0; j < components; j++)
-			{
-				// the fourth component (alpha) is always already linear, if it exists.
-				if (gammacorrect && j < 3)
-					values[i * components + j] = m.gammaToLinear(values[i * components + j] / 255.0f);
-				else
-					values[i * components + j] /= 255.0f;
-			}
+			for (int j = 0; j < gammacomponents; j++)
+				values[i * components + j] = love::math::gammaToLinear(values[i * components + j]);
 		}
 	}
 
@@ -255,36 +249,12 @@ int w_Shader_sendColors(lua_State *L)
 	return w_Shader_sendFloats(L, 3, shader, info, true);
 }
 
-int w_Shader_getExternVariable(lua_State *L)
+int w_Shader_hasUniform(lua_State *L)
 {
 	Shader *shader = luax_checkshader(L, 1);
 	const char *name = luaL_checkstring(L, 2);
-
-	int components = 0;
-	int arrayelements = 0;
-	Shader::UniformType type = Shader::UNIFORM_UNKNOWN;
-
-	type = shader->getExternVariable(name, components, arrayelements);
-
-	// Check if the variable exists (function will set components to 0 if not.)
-	if (components > 0)
-	{
-		const char *tname = nullptr;
-		if (!Shader::getConstant(type, tname))
-			return luaL_error(L, "Unknown extern variable type name.");
-
-		lua_pushstring(L, tname);
-		lua_pushinteger(L, components);
-		lua_pushinteger(L, arrayelements);
-	}
-	else
-	{
-		lua_pushnil(L);
-		lua_pushnil(L);
-		lua_pushnil(L);
-	}
-
-	return 3;
+	luax_pushboolean(L, shader->hasUniform(name));
+	return 1;
 }
 
 static const luaL_Reg w_Shader_functions[] =
@@ -297,7 +267,7 @@ static const luaL_Reg w_Shader_functions[] =
 	{ "sendTexture", w_Shader_send },
 	{ "send",        w_Shader_send },
 	{ "sendColor",   w_Shader_sendColors },
-	{ "getExternVariable", w_Shader_getExternVariable },
+	{ "hasUniform",  w_Shader_hasUniform },
 	{ 0, 0 }
 };
 
