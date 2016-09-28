@@ -45,7 +45,7 @@ static inline size_t writeByteData(lua_State *L, int startidx, int components, c
 	uint8 *componentdata = (uint8 *) data;
 
 	for (int i = 0; i < components; i++)
-		componentdata[i] = (uint8) luaL_optnumber(L, startidx + i, 255);
+		componentdata[i] = (uint8) (luaL_optnumber(L, startidx + i, 1.0) * 255.0);
 
 	return sizeof(uint8) * components;
 }
@@ -78,7 +78,7 @@ static inline size_t readByteData(lua_State *L, int components, const char *data
 	const uint8 *componentdata = (const uint8 *) data;
 
 	for (int i = 0; i < components; i++)
-		lua_pushnumber(L, (lua_Number) componentdata[i]);
+		lua_pushnumber(L, (lua_Number) componentdata[i] / 255.0);
 
 	return sizeof(uint8) * components;
 }
@@ -480,9 +480,9 @@ int w_Mesh_setDrawRange(lua_State *L)
 		t->setDrawRange();
 	else
 	{
-		int rangemin = (int) luaL_checknumber(L, 2) - 1;
-		int rangemax = (int) luaL_checknumber(L, 3) - 1;
-		luax_catchexcept(L, [&](){ t->setDrawRange(rangemin, rangemax); });
+		int start = (int) luaL_checknumber(L, 2) - 1;
+		int count = (int) luaL_checknumber(L, 3);
+		luax_catchexcept(L, [&](){ t->setDrawRange(start, count); });
 	}
 
 	return 0;
@@ -492,15 +492,13 @@ int w_Mesh_getDrawRange(lua_State *L)
 {
 	Mesh *t = luax_checkmesh(L, 1);
 
-	int rangemin = -1;
-	int rangemax = -1;
-	t->getDrawRange(rangemin, rangemax);
-
-	if (rangemin < 0 || rangemax < 0)
+	int start = 0;
+	int count = 1;
+	if (!t->getDrawRange(start, count))
 		return 0;
 
-	lua_pushinteger(L, rangemin + 1);
-	lua_pushinteger(L, rangemax + 1);
+	lua_pushinteger(L, start + 1);
+	lua_pushinteger(L, count);
 	return 2;
 }
 

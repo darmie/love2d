@@ -91,13 +91,7 @@ public:
 	int getCount() const;
 
 	/**
-	 * Sets the total number of sprites this SpriteBatch can hold.
-	 * Leaves existing sprite data intact when possible.
-	 **/
-	void setBufferSize(int newsize);
-
-	/**
-	 * Get the total number of sprites this SpriteBatch can hold.
+	 * Get the total number of sprites this SpriteBatch can currently hold.
 	 **/
 	int getBufferSize() const;
 
@@ -106,6 +100,10 @@ public:
 	 * The vertex attribute will be used when drawing the SpriteBatch.
 	 **/
 	void attachAttribute(const std::string &name, Mesh *mesh);
+
+	void setDrawRange(int start, int count);
+	void setDrawRange();
+	bool getDrawRange(int &start, int &count) const;
 
 	// Implements Drawable.
 	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
@@ -117,6 +115,12 @@ private:
 		StrongRef<Mesh> mesh;
 		int index;
 	};
+
+	/**
+	 * Sets the total number of sprites this SpriteBatch can hold.
+	 * Leaves existing sprite data intact when possible.
+	 **/
+	void setBufferSize(int newsize);
 
 	void addv(const Vertex *v, const Matrix3 &m, int index);
 
@@ -145,6 +149,9 @@ private:
 	QuadIndices quad_indices;
 
 	std::unordered_map<std::string, AttachedAttribute> attached_attributes;
+
+	int range_start;
+	int range_count;
 
 }; // SpriteBatch
 
