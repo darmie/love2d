@@ -169,11 +169,11 @@ function love.createhandlers()
 		mousemoved = function (x,y,dx,dy,t)
 			if love.mousemoved then return love.mousemoved(x,y,dx,dy,t) end
 		end,
-		mousepressed = function (x,y,b,t)
-			if love.mousepressed then return love.mousepressed(x,y,b,t) end
+		mousepressed = function (x,y,b,t,c)
+			if love.mousepressed then return love.mousepressed(x,y,b,t,c) end
 		end,
-		mousereleased = function (x,y,b,t)
-			if love.mousereleased then return love.mousereleased(x,y,b,t) end
+		mousereleased = function (x,y,b,t,c)
+			if love.mousereleased then return love.mousereleased(x,y,b,t,c) end
 		end,
 		wheelmoved = function (x,y)
 			if love.wheelmoved then return love.wheelmoved(x,y) end
@@ -346,7 +346,7 @@ function love.init()
 			fullscreen = false,
 			fullscreentype = "desktop",
 			display = 1,
-			vsync = true,
+			vsync = 1,
 			msaa = 0,
 			borderless = false,
 			resizable = false,
@@ -601,8 +601,8 @@ function love.errhand(msg)
 	love.graphics.reset()
 	local font = love.graphics.setNewFont(math.floor(love.window.toPixels(14)))
 
-	love.graphics.setBackgroundColor(89, 157, 220)
-	love.graphics.setColor(255, 255, 255, 255)
+	love.graphics.setBackgroundColor(89/255, 157/255, 220/255)
+	love.graphics.setColor(1, 1, 1, 1)
 
 	local trace = debug.traceback()
 

@@ -87,21 +87,15 @@ int w_Shader_sendFloats(lua_State *L, int startidx, Shader *shader, const Shader
 
 	float *values = _getNumbers<float>(L, startidx, shader, components, count);
 
-	if (colors)
+	if (colors && graphics::isGammaCorrect())
 	{
-		bool gammacorrect = love::graphics::isGammaCorrect();
-		const auto &m = love::math::Math::instance;
+		// alpha is always linear (when present).
+		int gammacomponents = std::min(components, 3);
 
 		for (int i = 0; i < count; i++)
 		{
-			for (int j = 0; j < components; j++)
-			{
-				// the fourth component (alpha) is always already linear, if it exists.
-				if (gammacorrect && j < 3)
-					values[i * components + j] = m.gammaToLinear(values[i * components + j] / 255.0f);
-				else
-					values[i * components + j] /= 255.0f;
-			}
+			for (int j = 0; j < gammacomponents; j++)
+				values[i * components + j] = math::gammaToLinear(values[i * components + j]);
 		}
 	}
 
@@ -156,9 +150,18 @@ int w_Shader_sendBooleans(lua_State *L, int startidx, Shader *shader, const Shad
 
 int w_Shader_sendMatrices(lua_State *L, int startidx, Shader *shader, const Shader::UniformInfo *info)
 {
+	bool columnmajor = false;
+
+	if (lua_isboolean(L, startidx))
+	{
+		columnmajor = lua_toboolean(L, startidx);
+		startidx++;
+	}
+
 	int count = _getCount(L, startidx, info);
-	int dimension = info->components;
-	int elements = dimension * dimension;
+	int columns = info->matrix.columns;
+	int rows = info->matrix.rows;
+	int elements = columns * rows;
 
 	float *values = shader->getScratchBuffer<float>(elements * count);
 
@@ -172,28 +175,68 @@ int w_Shader_sendMatrices(lua_State *L, int startidx, Shader *shader, const Shad
 
 		if (table_of_tables)
 		{
-			int n = 0;
+			int n = i * elements;
 
-			for (int j = 1; j <= dimension; j++)
+			if (columnmajor)
 			{
-				lua_rawgeti(L, startidx + i, j);
-
-				for (int k = 1; k <= dimension; k++)
+				for (int column = 0; column < columns; column++)
 				{
-					lua_rawgeti(L, -k, k);
-					values[i * elements + n] = (float) luaL_checknumber(L, -1);
-					n++;
-				}
+					lua_rawgeti(L, startidx + i, column + 1);
 
-				lua_pop(L, dimension + 1);
+					for (int row = 0; row < rows; row++)
+					{
+						lua_rawgeti(L, -(row + 1), row + 1);
+						values[n + (column * rows + row)] = (float) luaL_checknumber(L, -1);
+					}
+
+					lua_pop(L, rows + 1);
+				}
+			}
+			else
+			{
+				for (int row = 0; row < rows; row++)
+				{
+					lua_rawgeti(L, startidx + i, row + 1);
+
+					for (int column = 0; column < columns; column++)
+					{
+						// The table has the matrix elements laid out in row-major
+						// order, but we need to store them column-major in memory.
+						lua_rawgeti(L, -(column + 1), column + 1);
+						values[n + (column * rows + row)] = (float) luaL_checknumber(L, -1);
+					}
+
+					lua_pop(L, columns + 1);
+				}
 			}
 		}
 		else
 		{
-			for (int k = 1; k <= elements; k++)
+			int n = i * elements;
+
+			if (columnmajor)
 			{
-				lua_rawgeti(L, startidx + i, k);
-				values[i * elements + (k - 1)] = (float) luaL_checknumber(L, -1);
+				for (int column = 0; column < columns; column++)
+				{
+					for (int row = 0; row < rows; row++)
+					{
+						lua_rawgeti(L, startidx + i, column * rows + row + 1);
+						values[n + (column * rows + row)] = (float) luaL_checknumber(L, -1);
+					}
+				}
+			}
+			else
+			{
+				for (int column = 0; column < columns; column++)
+				{
+					for (int row = 0; row < rows; row++)
+					{
+						// The table has the matrix elements laid out in row-major
+						// order, but we need to store them column-major in memory.
+						lua_rawgeti(L, startidx + i, row * columns + column + 1);
+						values[n + (column * rows + row)] = (float) luaL_checknumber(L, -1);
+					}
+				}
 			}
 
 			lua_pop(L, elements);
@@ -255,49 +298,20 @@ int w_Shader_sendColors(lua_State *L)
 	return w_Shader_sendFloats(L, 3, shader, info, true);
 }
 
-int w_Shader_getExternVariable(lua_State *L)
+int w_Shader_hasUniform(lua_State *L)
 {
 	Shader *shader = luax_checkshader(L, 1);
 	const char *name = luaL_checkstring(L, 2);
-
-	int components = 0;
-	int arrayelements = 0;
-	Shader::UniformType type = Shader::UNIFORM_UNKNOWN;
-
-	type = shader->getExternVariable(name, components, arrayelements);
-
-	// Check if the variable exists (function will set components to 0 if not.)
-	if (components > 0)
-	{
-		const char *tname = nullptr;
-		if (!Shader::getConstant(type, tname))
-			return luaL_error(L, "Unknown extern variable type name.");
-
-		lua_pushstring(L, tname);
-		lua_pushinteger(L, components);
-		lua_pushinteger(L, arrayelements);
-	}
-	else
-	{
-		lua_pushnil(L);
-		lua_pushnil(L);
-		lua_pushnil(L);
-	}
-
-	return 3;
+	luax_pushboolean(L, shader->hasUniform(name));
+	return 1;
 }
 
 static const luaL_Reg w_Shader_functions[] =
 {
 	{ "getWarnings", w_Shader_getWarnings },
-	{ "sendInt",     w_Shader_send },
-	{ "sendBoolean", w_Shader_send },
-	{ "sendFloat",   w_Shader_send },
-	{ "sendMatrix",  w_Shader_send },
-	{ "sendTexture", w_Shader_send },
 	{ "send",        w_Shader_send },
 	{ "sendColor",   w_Shader_sendColors },
-	{ "getExternVariable", w_Shader_getExternVariable },
+	{ "hasUniform",  w_Shader_hasUniform },
 	{ 0, 0 }
 };
 

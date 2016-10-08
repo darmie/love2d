@@ -31,6 +31,7 @@
 #include "common/Exception.h"
 #include "audio/Audio.h"
 #include "common/config.h"
+#include "timer/Timer.h"
 
 #include <cmath>
 
@@ -244,8 +245,7 @@ Message *Event::convert(const SDL_Event &e) const
 	case SDL_MOUSEBUTTONDOWN:
 	case SDL_MOUSEBUTTONUP:
 		{
-			// SDL uses button index 3 for the right mouse button, but we use
-			// index 2.
+			// SDL uses button 3 for the right mouse button, but we use button 2
 			int button = e.button.button;
 			switch (button)
 			{
@@ -257,16 +257,17 @@ Message *Event::convert(const SDL_Event &e) const
 				break;
 			}
 
-			double x = (double) e.button.x;
-			double y = (double) e.button.y;
-			windowToPixelCoords(&x, &y);
-			vargs.emplace_back(x);
-			vargs.emplace_back(y);
+			double px = (double) e.button.x;
+			double py = (double) e.button.y;
+			windowToPixelCoords(&px, &py);
+			vargs.emplace_back(px);
+			vargs.emplace_back(py);
 			vargs.emplace_back((double) button);
 			vargs.emplace_back(e.button.which == SDL_TOUCH_MOUSEID);
-			msg = new Message((e.type == SDL_MOUSEBUTTONDOWN) ?
-							  "mousepressed" : "mousereleased",
-							  vargs);
+			vargs.emplace_back((double) e.button.clicks);
+
+			bool down = e.type == SDL_MOUSEBUTTONDOWN;
+			msg = new Message(down ? "mousepressed" : "mousereleased", vargs);
 		}
 		break;
 	case SDL_MOUSEWHEEL:
