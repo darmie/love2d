@@ -70,37 +70,17 @@ public:
 	virtual ~Canvas();
 
 	// Implements Volatile.
-	virtual bool loadVolatile();
-	virtual void unloadVolatile();
+	bool loadVolatile() override;
+	void unloadVolatile() override;
 
 	// Implements Drawable.
-	virtual void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	void draw(const Matrix4 &m) override;
 
 	// Implements Texture.
-	virtual void drawq(Quad *quad, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
-	virtual void setFilter(const Texture::Filter &f);
-	virtual bool setWrap(const Texture::Wrap &w);
-	virtual const void *getHandle() const;
-
-	/**
-	 * @param canvases A list of other canvases to temporarily attach to this one,
-	 * to allow drawing to multiple canvases at once.
-	 **/
-	void startGrab(const std::vector<Canvas *> &canvases);
-	void startGrab();
-	void stopGrab(bool switchingToOtherCanvas = false);
-
-	/**
-	 * Create and attach a stencil buffer to this Canvas' framebuffer, if necessary.
-	 **/
-	bool checkCreateStencil();
-
-	love::image::ImageData *newImageData(love::image::Image *image, int x, int y, int w, int h);
-
-	inline const std::vector<Canvas *> &getAttachedCanvases() const
-	{
-		return attachedCanvases;
-	}
+	void drawq(Quad *quad, const Matrix4 &m) override;
+	void setFilter(const Texture::Filter &f) override;
+	bool setWrap(const Texture::Wrap &w) override;
+	const void *getHandle() const override;
 
 	inline GLenum getStatus() const
 	{
@@ -117,18 +97,25 @@ public:
 		return actual_samples;
 	}
 
+	inline int getRequestedMSAA() const
+	{
+		return requested_samples;
+	}
+
+	inline ptrdiff_t getMSAAHandle() const
+	{
+		return msaa_buffer;
+	}
+
+	inline GLuint getFBO() const
+	{
+		return fbo;
+	}
+
 	static Format getSizedFormat(Format format);
 	static bool isSupported();
 	static bool isMultiFormatMultiCanvasSupported();
 	static bool isFormatSupported(Format format);
-
-	static Canvas *current;
-
-	// The viewport dimensions of the system (default) framebuffer.
-	static OpenGL::Viewport systemViewport;
-
-	// Whether the main screen should have linear -> sRGB conversions enabled.
-	static bool screenHasSRGB;
 
 	static int canvasCount;
 
@@ -137,28 +124,19 @@ public:
 
 private:
 
-	void setupGrab();
-
-	bool createMSAAFBO(GLenum internalformat);
-	bool resolveMSAA(bool restoreprev);
-
 	void drawv(const Matrix4 &t, const Vertex *v);
 
 	static void convertFormat(Format format, GLenum &internalformat, GLenum &externalformat, GLenum &type);
 	static size_t getFormatBitsPerPixel(Format format);
 
 	GLuint fbo;
-	GLuint resolve_fbo;
 
 	GLuint texture;
 	GLuint msaa_buffer;
-	GLuint depth_stencil;
 
 	Format format;
 
 	GLenum status;
-
-	std::vector<Canvas *> attachedCanvases;
 
 	int requested_samples;
 	int actual_samples;

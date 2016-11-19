@@ -42,10 +42,7 @@ public:
 	virtual bool play();
 	virtual void stop();
 	virtual void pause();
-	virtual void resume();
-	virtual void rewind();
-	virtual bool isStopped() const;
-	virtual bool isPaused() const;
+	virtual bool isPlaying() const;
 	virtual bool isFinished() const;
 	virtual bool update();
 	virtual void setPitch(float pitch);
@@ -78,6 +75,9 @@ public:
 	virtual void setMaxDistance(float distance);
 	virtual float getMaxDistance() const;
 	virtual int getChannels() const;
+
+	virtual int getFreeBufferCount() const;
+	virtual bool queue(void *data, size_t length, int dataSampleRate, int dataBitDepth, int dataChannels);
 
 private:
 

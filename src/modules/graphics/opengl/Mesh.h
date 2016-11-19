@@ -190,14 +190,14 @@ public:
 	void setDrawMode(DrawMode mode);
 	DrawMode getDrawMode() const;
 
-	void setDrawRange(int min, int max);
+	void setDrawRange(int start, int count);
 	void setDrawRange();
-	void getDrawRange(int &min, int &max) const;
+	bool getDrawRange(int &start, int &count) const;
 
 	int bindAttributeToShaderInput(int attributeindex, const std::string &inputname);
 
 	// Implements Drawable.
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky) override;
+	void draw(const Matrix4 &m) override;
 
 	static GLenum getGLBufferUsage(Usage usage);
 
@@ -252,8 +252,8 @@ private:
 
 	DrawMode drawMode;
 
-	int rangeMin;
-	int rangeMax;
+	int rangeStart;
+	int rangeCount;
 
 	StrongRef<Texture> texture;
 

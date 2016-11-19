@@ -28,6 +28,12 @@
 #include "sound/SoundData.h"
 #include "sound/Decoder.h"
 
+// STL
+#include <vector>
+
+// C
+#include <float.h>
+
 // OpenAL
 #ifdef LOVE_APPLE_USE_FRAMEWORKS
 #ifdef LOVE_IOS
@@ -48,6 +54,13 @@ namespace audio
 {
 namespace openal
 {
+
+#ifdef LOVE_IOS
+// OpenAL on iOS barfs if the max distance is +inf.
+static const float MAX_ATTENUATION_DISTANCE = 1000000.0f;
+#else
+static const float MAX_ATTENUATION_DISTANCE = FLT_MAX;
+#endif
 
 class Audio;
 class Pool;
@@ -83,6 +96,7 @@ public:
 
 	Source(Pool *pool, love::sound::SoundData *soundData);
 	Source(Pool *pool, love::sound::Decoder *decoder);
+	Source(Pool *pool, int sampleRate, int bitDepth, int channels);
 	Source(const Source &s);
 	virtual ~Source();
 
@@ -90,10 +104,7 @@ public:
 	virtual bool play();
 	virtual void stop();
 	virtual void pause();
-	virtual void resume();
-	virtual void rewind();
-	virtual bool isStopped() const;
-	virtual bool isPaused() const;
+	virtual bool isPlaying() const;
 	virtual bool isFinished() const;
 	virtual bool update();
 	virtual void setPitch(float pitch);
@@ -130,11 +141,21 @@ public:
 	virtual float getMaxDistance() const;
 	virtual int getChannels() const;
 
-	bool playAtomic();
+	virtual int getFreeBufferCount() const;
+	virtual bool queue(void *data, size_t length, int dataSampleRate, int dataBitDepth, int dataChannels);
+	virtual bool queueAtomic(void *data, ALsizei length);
+
+	void prepareAtomic();
+	void teardownAtomic();
+
+	bool playAtomic(ALuint source);
 	void stopAtomic();
 	void pauseAtomic();
 	void resumeAtomic();
-	void rewindAtomic();
+
+	static bool playAtomic(const std::vector<love::audio::Source*> &sources, const std::vector<ALuint> &ids, const std::vector<char> &wasPlaying);
+	static void stopAtomic(const std::vector<love::audio::Source*> &sources);
+	static void pauseAtomic(const std::vector<love::audio::Source*> &sources);
 
 private:
 
@@ -153,28 +174,34 @@ private:
 
 	int streamAtomic(ALuint buffer, love::sound::Decoder *d);
 
-	Pool *pool;
-	ALuint source;
-	bool valid;
+	ALuint unusedBufferPeek();
+	ALuint unusedBufferPeekNext();
+	ALuint *unusedBufferPop();
+	void unusedBufferPush(ALuint buffer);
+	void unusedBufferQueue(ALuint buffer);
+	
+	Pool *pool = nullptr;
+	ALuint source = 0;
+	bool valid = false;
 
 	static const unsigned int MAX_BUFFERS = 8;
 	ALuint streamBuffers[MAX_BUFFERS];
+	ALuint unusedBuffers[MAX_BUFFERS];
 
 	StrongRef<StaticDataBuffer> staticBuffer;
 
-	float pitch;
-	float volume;
+	float pitch = 1.0f;
+	float volume = 1.0f;
 	float position[3];
 	float velocity[3];
 	float direction[3];
-	bool relative;
-	bool looping;
-	bool paused;
-	float minVolume;
-	float maxVolume;
-	float referenceDistance;
-	float rolloffFactor;
-	float maxDistance;
+	bool relative = false;
+	bool looping = false;
+	float minVolume = 0.0f;
+	float maxVolume = 1.0f;
+	float referenceDistance = 1.0f;
+	float rolloffFactor = 1.0f;
+	float maxDistance = MAX_ATTENUATION_DISTANCE;
 
 	struct Cone
 	{
@@ -183,16 +210,18 @@ private:
 		float outerVolume = 0.0f;
 	} cone;
 
-	float offsetSamples;
-	float offsetSeconds;
+	float offsetSamples = 0.0f;
+	float offsetSeconds = 0.0f;
 
-	int sampleRate;
-	int channels;
-	int bitDepth;
+	int sampleRate = 0;
+	int channels = 0;
+	int bitDepth = 0;
 
 	StrongRef<love::sound::Decoder> decoder;
 
-	unsigned int toLoop;
+	unsigned int toLoop = 0;
+	int unusedBufferTop = -1;
+	ALsizei bufferedBytes = 0;
 
 }; // Source
 

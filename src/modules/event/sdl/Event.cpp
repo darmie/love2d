@@ -31,6 +31,7 @@
 #include "common/Exception.h"
 #include "audio/Audio.h"
 #include "common/config.h"
+#include "timer/Timer.h"
 
 #include <cmath>
 
@@ -111,6 +112,8 @@ Event::~Event()
 
 void Event::pump()
 {
+	exceptionIfInRenderPass();
+
 	SDL_Event e;
 
 	while (SDL_PollEvent(&e))
@@ -126,6 +129,8 @@ void Event::pump()
 
 Message *Event::wait()
 {
+	exceptionIfInRenderPass();
+
 	SDL_Event e;
 
 	if (SDL_WaitEvent(&e) != 1)
@@ -136,6 +141,8 @@ Message *Event::wait()
 
 void Event::clear()
 {
+	exceptionIfInRenderPass();
+
 	SDL_Event e;
 
 	while (SDL_PollEvent(&e))
@@ -144,6 +151,17 @@ void Event::clear()
 	}
 
 	love::event::Event::clear();
+}
+
+void Event::exceptionIfInRenderPass()
+{
+	// Some core OS graphics functionality (e.g. swap buffers on some platforms)
+	// happens inside SDL_PumpEvents - which is called by SDL_PollEvent and
+	// friends. It's probably a bad idea to call those functions while we're in
+	// a render pass.
+	auto gfx = Module::getInstance<graphics::Graphics>(Module::M_GRAPHICS);
+	if (gfx != nullptr && gfx->isPassActive())
+		throw love::Exception("Cannot call this function while a render pass is active in love.graphics.");
 }
 
 Message *Event::convert(const SDL_Event &e) const
@@ -244,8 +262,7 @@ Message *Event::convert(const SDL_Event &e) const
 	case SDL_MOUSEBUTTONDOWN:
 	case SDL_MOUSEBUTTONUP:
 		{
-			// SDL uses button index 3 for the right mouse button, but we use
-			// index 2.
+			// SDL uses button 3 for the right mouse button, but we use button 2
 			int button = e.button.button;
 			switch (button)
 			{
@@ -257,16 +274,17 @@ Message *Event::convert(const SDL_Event &e) const
 				break;
 			}
 
-			double x = (double) e.button.x;
-			double y = (double) e.button.y;
-			windowToPixelCoords(&x, &y);
-			vargs.emplace_back(x);
-			vargs.emplace_back(y);
+			double px = (double) e.button.x;
+			double py = (double) e.button.y;
+			windowToPixelCoords(&px, &py);
+			vargs.emplace_back(px);
+			vargs.emplace_back(py);
 			vargs.emplace_back((double) button);
 			vargs.emplace_back(e.button.which == SDL_TOUCH_MOUSEID);
-			msg = new Message((e.type == SDL_MOUSEBUTTONDOWN) ?
-							  "mousepressed" : "mousereleased",
-							  vargs);
+			vargs.emplace_back((double) e.button.clicks);
+
+			bool down = e.type == SDL_MOUSEBUTTONDOWN;
+			msg = new Message(down ? "mousepressed" : "mousereleased", vargs);
 		}
 		break;
 	case SDL_MOUSEWHEEL:

@@ -35,11 +35,11 @@ Text *luax_checktext(lua_State *L, int idx)
 void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredString> &strings)
 {
 	Font::ColoredString coloredstr;
-	coloredstr.color = Color(255, 255, 255, 255);
+	coloredstr.color = Colorf(1.0f, 1.0f, 1.0f, 1.0f);
 
 	if (lua_istable(L, idx))
 	{
-		int len = luax_objlen(L, idx);
+		int len = (int) luax_objlen(L, idx);
 
 		for (int i = 1; i <= len; i++)
 		{
@@ -50,10 +50,10 @@ void luax_checkcoloredstring(lua_State *L, int idx, std::vector<Font::ColoredStr
 				for (int j = 1; j <= 4; j++)
 					lua_rawgeti(L, -j, j);
 
-				coloredstr.color.r = (unsigned char) luaL_checknumber(L, -4);
-				coloredstr.color.g = (unsigned char) luaL_checknumber(L, -3);
-				coloredstr.color.b = (unsigned char) luaL_checknumber(L, -2);
-				coloredstr.color.a = (unsigned char) luaL_optnumber(L, -1, 255);
+				coloredstr.color.r = (float) luaL_checknumber(L, -4);
+				coloredstr.color.g = (float) luaL_checknumber(L, -3);
+				coloredstr.color.b = (float) luaL_checknumber(L, -2);
+				coloredstr.color.a = (float) luaL_optnumber(L, -1, 1.0);
 
 				lua_pop(L, 4);
 			}
@@ -77,12 +77,7 @@ int w_Text_set(lua_State *L)
 {
 	Text *t = luax_checktext(L, 1);
 
-	if (lua_isnoneornil(L, 2))
-	{
-		// No argument: clear all current text.
-		luax_catchexcept(L, [&](){ t->set(); });
-	}
-	else if (lua_isnoneornil(L, 3))
+	if (lua_isnoneornil(L, 3))
 	{
 		// Single argument: unformatted text.
 		std::vector<Font::ColoredString> newtext;
@@ -144,8 +139,9 @@ int w_Text_add(lua_State *L)
 	float kx = (float) luaL_optnumber(L, 10, 0.0);
 	float ky = (float) luaL_optnumber(L, 11, 0.0);
 
+	Matrix4 m(x, y, a, sx, sy, ox, oy, kx, ky);
 	int index = 0;
-	luax_catchexcept(L, [&](){ index = t->add(text, x, y, a, sx, sy, ox, oy, kx, ky); });
+	luax_catchexcept(L, [&](){ index = t->add(text, m); });
 	lua_pushnumber(L, index + 1);
 
 	return 1;
@@ -176,8 +172,9 @@ int w_Text_addf(lua_State *L)
 	float kx = (float) luaL_optnumber(L, 12, 0.0);
 	float ky = (float) luaL_optnumber(L, 13, 0.0);
 
+	Matrix4 m(x, y, a, sx, sy, ox, oy, kx, ky);
 	int index = 0;
-	luax_catchexcept(L, [&](){ index = t->addf(text, wrap, align, x, y, a, sx, sy, ox, oy, kx, ky); });
+	luax_catchexcept(L, [&](){ index = t->addf(text, wrap, align, m); });
 	lua_pushnumber(L, index + 1);
 
 	return 1;

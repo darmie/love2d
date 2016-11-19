@@ -24,7 +24,6 @@
 
 // STD
 #include <iostream>
-#include <float.h>
 #include <algorithm>
 
 namespace love
@@ -33,13 +32,6 @@ namespace audio
 {
 namespace openal
 {
-
-#ifdef LOVE_IOS
-// OpenAL on iOS barfs if the max distance is +inf.
-static const float MAX_ATTENUATION_DISTANCE = 1000000.0f;
-#else
-static const float MAX_ATTENUATION_DISTANCE = FLT_MAX;
-#endif
 
 class InvalidFormatException : public love::Exception
 {
@@ -64,6 +56,50 @@ Ensure the Source is not multi-channel before calling this function.")
 
 };
 
+class QueueFormatMismatchException : public love::Exception
+{
+public:
+
+	QueueFormatMismatchException()
+		: Exception("Queued sound data must have same format as sound Source.")
+	{
+	}
+
+};
+
+class QueueTypeMismatchException : public love::Exception
+{
+public:
+
+	QueueTypeMismatchException()
+		: Exception("Only queueable Sources can be queued with sound data.")
+	{
+	}
+
+};
+
+class QueueMalformedLengthException : public love::Exception
+{
+public:
+
+	QueueMalformedLengthException(int bytes)
+		: Exception("Data length must be a multiple of sample size (%d bytes).", bytes)
+	{
+	}
+
+};
+
+class QueueLoopingException : public love::Exception
+{
+public:
+
+	QueueLoopingException()
+		: Exception("Queueable Sources can not be looped.")
+	{
+	}
+
+};
+
 StaticDataBuffer::StaticDataBuffer(ALenum format, const ALvoid *data, ALsizei size, ALsizei freq)
 	: size(size)
 {
@@ -79,26 +115,9 @@ StaticDataBuffer::~StaticDataBuffer()
 Source::Source(Pool *pool, love::sound::SoundData *soundData)
 	: love::audio::Source(Source::TYPE_STATIC)
 	, pool(pool)
-	, valid(false)
-	, staticBuffer(nullptr)
-	, pitch(1.0f)
-	, volume(1.0f)
-	, relative(false)
-	, looping(false)
-	, paused(false)
-	, minVolume(0.0f)
-	, maxVolume(1.0f)
-	, referenceDistance(1.0f)
-	, rolloffFactor(1.0f)
-	, maxDistance(MAX_ATTENUATION_DISTANCE)
-	, cone()
-	, offsetSamples(0)
-	, offsetSeconds(0)
 	, sampleRate(soundData->getSampleRate())
 	, channels(soundData->getChannels())
 	, bitDepth(soundData->getBitDepth())
-	, decoder(nullptr)
-	, toLoop(0)
 {
 	ALenum fmt = getFormat(soundData->getChannels(), soundData->getBitDepth());
 	if (fmt == 0)
@@ -116,31 +135,40 @@ Source::Source(Pool *pool, love::sound::SoundData *soundData)
 Source::Source(Pool *pool, love::sound::Decoder *decoder)
 	: love::audio::Source(Source::TYPE_STREAM)
 	, pool(pool)
-	, valid(false)
-	, staticBuffer(nullptr)
-	, pitch(1.0f)
-	, volume(1.0f)
-	, relative(false)
-	, looping(false)
-	, paused(false)
-	, minVolume(0.0f)
-	, maxVolume(1.0f)
-	, referenceDistance(1.0f)
-	, rolloffFactor(1.0f)
-	, maxDistance(MAX_ATTENUATION_DISTANCE)
-	, cone()
-	, offsetSamples(0)
-	, offsetSeconds(0)
 	, sampleRate(decoder->getSampleRate())
 	, channels(decoder->getChannels())
 	, bitDepth(decoder->getBitDepth())
 	, decoder(decoder)
-	, toLoop(0)
+	, unusedBufferTop(MAX_BUFFERS - 1)
 {
 	if (getFormat(decoder->getChannels(), decoder->getBitDepth()) == 0)
 		throw InvalidFormatException(decoder->getChannels(), decoder->getBitDepth());
 
 	alGenBuffers(MAX_BUFFERS, streamBuffers);
+	for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+		unusedBuffers[i] = streamBuffers[i];
+
+	float z[3] = {0, 0, 0};
+
+	setFloatv(position, z);
+	setFloatv(velocity, z);
+	setFloatv(direction, z);
+}
+
+Source::Source(Pool *pool, int sampleRate, int bitDepth, int channels)
+	: love::audio::Source(Source::TYPE_QUEUE)
+	, pool(pool)
+	, sampleRate(sampleRate)
+	, channels(channels)
+	, bitDepth(bitDepth)
+{
+	ALenum fmt = getFormat(channels, bitDepth);
+	if (fmt == 0)
+		throw InvalidFormatException(channels, bitDepth);
+
+	alGenBuffers(MAX_BUFFERS, streamBuffers);
+	for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+		unusedBuffers[i] = streamBuffers[i];
 
 	float z[3] = {0, 0, 0};
 
@@ -158,7 +186,6 @@ Source::Source(const Source &s)
 	, volume(s.volume)
 	, relative(s.relative)
 	, looping(s.looping)
-	, paused(false)
 	, minVolume(s.minVolume)
 	, maxVolume(s.maxVolume)
 	, referenceDistance(s.referenceDistance)
@@ -172,13 +199,18 @@ Source::Source(const Source &s)
 	, bitDepth(s.bitDepth)
 	, decoder(nullptr)
 	, toLoop(0)
+	, unusedBufferTop(s.type == TYPE_STREAM ? MAX_BUFFERS - 1 : -1)
 {
 	if (type == TYPE_STREAM)
 	{
 		if (s.decoder.get())
 			decoder.set(s.decoder->clone(), Acquire::NORETAIN);
-
+	}
+	if (type != TYPE_STATIC)
+	{
 		alGenBuffers(MAX_BUFFERS, streamBuffers);
+		for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+			unusedBuffers[i] = streamBuffers[i];
 	}
 
 	setFloatv(position, s.position);
@@ -191,7 +223,7 @@ Source::~Source()
 	if (valid)
 		pool->stop(this);
 
-	if (type == TYPE_STREAM)
+	if (type != TYPE_STATIC)
 		alDeleteBuffers(MAX_BUFFERS, streamBuffers);
 }
 
@@ -202,23 +234,14 @@ love::audio::Source *Source::clone()
 
 bool Source::play()
 {
-	if (valid && paused)
-	{
-		pool->resume(this);
-		return true;
-	}
-
-	valid = pool->play(this, source);
+	valid = pool->play(this);
 	return valid;
 }
 
 void Source::stop()
 {
-	if (!isStopped())
-	{
+	if (valid)
 		pool->stop(this);
-		pool->softRewind(this);
-	}
 }
 
 void Source::pause()
@@ -226,43 +249,27 @@ void Source::pause()
 	pool->pause(this);
 }
 
-void Source::resume()
+bool Source::isPlaying() const
 {
-	pool->resume(this);
-}
+	if (!valid)
+		return false;
 
-void Source::rewind()
-{
-	pool->rewind(this);
-}
-
-bool Source::isStopped() const
-{
-	if (valid)
-	{
-		ALenum state;
-		alGetSourcei(source, AL_SOURCE_STATE, &state);
-		return (state == AL_STOPPED);
-	}
-
-	return true;
-}
-
-bool Source::isPaused() const
-{
-	if (valid)
-	{
-		ALenum state;
-		alGetSourcei(source, AL_SOURCE_STATE, &state);
-		return (state == AL_PAUSED);
-	}
-
-	return false;
+	ALenum state;
+	alGetSourcei(source, AL_SOURCE_STATE, &state);
+	return state == AL_PLAYING;
 }
 
 bool Source::isFinished() const
 {
-	return type == TYPE_STATIC ? isStopped() : (isStopped() && !isLooping() && decoder->isFinished());
+	if (!valid)
+		return false;
+
+	if (type == TYPE_STREAM && (isLooping() || !decoder->isFinished()))
+		return false;
+
+	ALenum state;
+	alGetSourcei(source, AL_SOURCE_STATE, &state);
+	return state == AL_STOPPED;
 }
 
 bool Source::update()
@@ -270,49 +277,68 @@ bool Source::update()
 	if (!valid)
 		return false;
 
-	if (type == TYPE_STATIC)
+	switch (type)
 	{
-		// Looping mode could have changed.
-		alSourcei(source, AL_LOOPING, isLooping() ? AL_TRUE : AL_FALSE);
-		return !isStopped();
-	}
-	else if (type == TYPE_STREAM && (isLooping() || !isFinished()))
-	{
-		// Number of processed buffers.
-		ALint processed = 0;
-
-		alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
-
-		while (processed--)
+		case TYPE_STATIC:
 		{
-			ALuint buffer;
-
-			float curOffsetSamples, curOffsetSecs;
-
-			alGetSourcef(source, AL_SAMPLE_OFFSET, &curOffsetSamples);
-
-			int freq = decoder->getSampleRate();
-			curOffsetSecs = curOffsetSamples / freq;
-
-			// Get a free buffer.
-			alSourceUnqueueBuffers(source, 1, &buffer);
-
-			float newOffsetSamples, newOffsetSecs;
-
-			alGetSourcef(source, AL_SAMPLE_OFFSET, &newOffsetSamples);
-			newOffsetSecs = newOffsetSamples / freq;
-
-			offsetSamples += (curOffsetSamples - newOffsetSamples);
-			offsetSeconds += (curOffsetSecs - newOffsetSecs);
-
-			// FIXME: We should put freed buffers into a list that we later
-			// consume here, so we can keep track of all free buffers even if we
-			// tried to stream data to one but the decoder didn't have data for it.
-			if (streamAtomic(buffer, decoder.get()) > 0)
-				alSourceQueueBuffers(source, 1, &buffer);
+			// Looping mode could have changed.
+			// FIXME: make looping mode change atomically so this is not needed
+			alSourcei(source, AL_LOOPING, isLooping() ? AL_TRUE : AL_FALSE);
+			return !isFinished();
 		}
+		case TYPE_STREAM:
+			if (!isFinished())
+			{
+				ALint processed;
+				ALuint buffers[MAX_BUFFERS];
+				float curOffsetSamples, curOffsetSecs, newOffsetSamples, newOffsetSecs;
+				int freq = decoder->getSampleRate();
 
-		return true;
+				alGetSourcef(source, AL_SAMPLE_OFFSET, &curOffsetSamples);
+				curOffsetSecs = curOffsetSamples / freq;
+
+				alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
+				alSourceUnqueueBuffers(source, processed, buffers);
+
+				alGetSourcef(source, AL_SAMPLE_OFFSET, &newOffsetSamples);
+				newOffsetSecs = newOffsetSamples / freq;
+
+				offsetSamples += (curOffsetSamples - newOffsetSamples);
+				offsetSeconds += (curOffsetSecs - newOffsetSecs);
+
+				for (unsigned int i = 0; i < (unsigned int)processed; i++)
+					unusedBufferPush(buffers[i]);
+
+				while (unusedBufferPeek() != AL_NONE)
+				{
+					if(streamAtomic(unusedBufferPeek(), decoder.get()) > 0)
+						alSourceQueueBuffers(source, 1, unusedBufferPop());
+					else
+						break;
+				}
+
+				return true;
+			}
+			return false;
+		case TYPE_QUEUE: 
+		{
+			ALint processed;
+			ALuint buffers[MAX_BUFFERS];
+
+			alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
+			alSourceUnqueueBuffers(source, processed, buffers);
+
+			for (unsigned int i = 0; i < (unsigned int)processed; i++)
+			{
+				ALint size;
+				alGetBufferi(buffers[i], AL_SIZE, &size);
+				bufferedBytes -= size;
+				unusedBufferPush(buffers[i]);
+			}
+			return !isFinished();
+		}
+		case TYPE_MAX_ENUM:
+			break;
 	}
 
 	return false;
@@ -362,45 +388,85 @@ float Source::getVolume() const
 
 void Source::seekAtomic(float offset, void *unit)
 {
-	if (valid)
+	float offsetSamples, offsetSeconds;
+
+	switch (*((Source::Unit *) unit))
 	{
-		switch (*((Source::Unit *) unit))
-		{
-		case Source::UNIT_SAMPLES:
-			if (type == TYPE_STREAM)
-			{
-				offsetSamples = offset;
-				offset /= decoder->getSampleRate();
-				offsetSeconds = offset;
-				decoder->seek(offset);
-			}
-			else
-				alSourcef(source, AL_SAMPLE_OFFSET, offset);
-			break;
-		case Source::UNIT_SECONDS:
-		default:
-			if (type == TYPE_STREAM)
-			{
-				offsetSeconds = offset;
-				decoder->seek(offset);
-				offsetSamples = offset * decoder->getSampleRate();
-			}
-			else
-				alSourcef(source, AL_SEC_OFFSET, offset);
-			break;
-		}
-		if (type == TYPE_STREAM)
-		{
-			bool waspaused = paused;
-			// Because we still have old data
-			// from before the seek in the buffers
-			// let's empty them.
-			stopAtomic();
-			playAtomic();
-			if (waspaused)
-				pauseAtomic();
-		}
+	case Source::UNIT_SAMPLES:
+		offsetSamples = offset;
+		offsetSeconds = offset / sampleRate;
+		break;
+	case Source::UNIT_SECONDS:
+	default:
+		offsetSeconds = offset;
+		offsetSamples = offset * sampleRate;
+		break;
 	}
+
+	bool wasPlaying = isPlaying();
+	switch (type)
+	{
+		case TYPE_STATIC:
+			if (valid)
+			{
+				alSourcef(source, AL_SAMPLE_OFFSET, offsetSamples);
+				offsetSamples = offsetSeconds = 0;
+			}
+			break;
+		case TYPE_STREAM:
+		{
+			// To drain all buffers
+			if (valid)
+				stop();
+
+			decoder->seek(offsetSeconds);
+
+			if (wasPlaying)
+				play();
+
+			break;
+		}
+		case TYPE_QUEUE:
+			if (valid)
+			{
+				alSourcef(source, AL_SAMPLE_OFFSET, offsetSamples);
+				offsetSamples = offsetSeconds = 0;
+			}
+			else
+			{
+				ALint size;
+				ALuint buffer = unusedBufferPeek();
+
+				//emulate AL behavior, discarding buffer once playback head is past one
+				while (buffer != AL_NONE)
+				{
+					alGetBufferi(buffer, AL_SIZE, &size);
+
+					if (offsetSamples < size / (bitDepth / 8 * channels))
+						break;
+
+					unusedBufferPop();
+					buffer = unusedBufferPeek();
+					bufferedBytes -= size;
+					offsetSamples -= size / (bitDepth / 8 * channels);
+				}
+				if (buffer == AL_NONE)
+					offsetSamples = 0;
+				offsetSeconds = offsetSamples / sampleRate;
+			}
+			break;
+		case TYPE_MAX_ENUM:
+			break;
+	}
+	if (wasPlaying && (alGetError() == AL_INVALID_VALUE || (type == TYPE_STREAM && !isPlaying())))
+	{
+		stop();
+		if (isLooping())
+			play();
+		return;
+	}
+	this->offsetSamples = offsetSamples;
+	this->offsetSeconds = offsetSeconds;
 }
 
 void Source::seek(float offset, Source::Unit unit)
@@ -410,27 +476,24 @@ void Source::seek(float offset, Source::Unit unit)
 
 float Source::tellAtomic(void *unit) const
 {
-	if (valid)
+	float offset = 0.0f;
+
+	switch (*((Source::Unit *) unit))
 	{
-		float offset;
-		switch (*((Source::Unit *) unit))
-		{
-		case Source::UNIT_SAMPLES:
+	case Source::UNIT_SAMPLES:
+		if (valid)
 			alGetSourcef(source, AL_SAMPLE_OFFSET, &offset);
-			if (type == TYPE_STREAM) offset += offsetSamples;
-			break;
-		case Source::UNIT_SECONDS:
-		default:
-			{
-				alGetSourcef(source, AL_SAMPLE_OFFSET, &offset);
-				offset /= sampleRate;
-				if (type == TYPE_STREAM) offset += offsetSeconds;
-			}
-			break;
-		}
-		return offset;
+		offset += offsetSamples;
+		break;
+	case Source::UNIT_SECONDS:
+	default:
+		if (valid)
+			alGetSourcef(source, AL_SEC_OFFSET, &offset);
+		offset += offsetSeconds;
+		break;
 	}
-	return 0.0f;
+
+	return offset;
 }
 
 float Source::tell(Source::Unit unit)
@@ -442,25 +505,40 @@ double Source::getDurationAtomic(void *vunit)
 {
 	Unit unit = *(Unit *) vunit;
 
-	if (type == TYPE_STREAM)
+	switch (type)
 	{
-		double seconds = decoder->getDuration();
+		case TYPE_STATIC:
+		{
+			ALsizei size = staticBuffer->getSize();
+			ALsizei samples = (size / channels) / (bitDepth / 8);
 
-		if (unit == UNIT_SECONDS)
-			return seconds;
-		else
-			return seconds * decoder->getSampleRate();
-	}
-	else
-	{
-		ALsizei size = staticBuffer->getSize();
-		ALsizei samples = (size / channels) / (bitDepth / 8);
+			if (unit == UNIT_SAMPLES)
+				return (double) samples;
+			else
+				return (double) samples / (double) sampleRate;
+		}
+		case TYPE_STREAM:
+		{
+			double seconds = decoder->getDuration();
 
-		if (unit == UNIT_SAMPLES)
-			return (double) samples;
-		else
-			return (double) samples / (double) sampleRate;
+			if (unit == UNIT_SECONDS)
+				return seconds;
+			else
+				return seconds * decoder->getSampleRate();
+		}
+		case TYPE_QUEUE:
+		{
+			ALsizei samples = (bufferedBytes / channels) / (bitDepth / 8);
+
+			if (unit == UNIT_SAMPLES)
+				return (double)samples;
+			else
+				return (double)samples / (double)sampleRate;
+		}
+		case TYPE_MAX_ENUM:
+			return 0.0;
 	}
+	return 0.0;
 }
 
 double Source::getDuration(Unit unit)
@@ -582,6 +660,9 @@ bool Source::isRelative() const
 
 void Source::setLooping(bool enable)
 {
+	if (type == TYPE_QUEUE)
+		throw QueueLoopingException();
+
 	if (valid && type == TYPE_STATIC)
 		alSourcei(source, AL_LOOPING, enable ? AL_TRUE : AL_FALSE);
 
@@ -593,128 +674,300 @@ bool Source::isLooping() const
 	return looping;
 }
 
-bool Source::playAtomic()
+bool Source::queue(void *data, size_t length, int dataSampleRate, int dataBitDepth, int dataChannels)
+{
+	if (type != TYPE_QUEUE)
+		throw QueueTypeMismatchException();
+
+	if (dataSampleRate != sampleRate || dataBitDepth != bitDepth || dataChannels != channels )
+		throw QueueFormatMismatchException();
+
+	if (length % (bitDepth / 8 * channels) != 0)
+		throw QueueMalformedLengthException(bitDepth / 8 * channels);
+
+	if (length == 0)
+		return true;
+
+	return pool->queue(this, data, (ALsizei)length);
+}
+
+bool Source::queueAtomic(void *data, ALsizei length)
+{
+	if (valid)
+	{
+		ALuint buffer = unusedBufferPeek();
+		if (buffer == AL_NONE)
+			return false;
+
+		alBufferData(buffer, getFormat(channels, bitDepth), data, length, sampleRate);
+		alSourceQueueBuffers(source, 1, &buffer);
+		unusedBufferPop();
+	}
+	else
+	{
+		ALuint buffer = unusedBufferPeekNext();
+		if (buffer == AL_NONE)
+			return false;
+
+		//stack acts as queue while stopped
+		alBufferData(buffer, getFormat(channels, bitDepth), data, length, sampleRate);
+		unusedBufferQueue(buffer);
+	}
+	bufferedBytes += length;
+
+	return true;
+}
+
+int Source::getFreeBufferCount() const
+{
+	switch (type) //why not :^)
+	{
+		case TYPE_STATIC: 
+			return 0;
+		case TYPE_STREAM:
+			return unusedBufferTop + 1;
+		case TYPE_QUEUE:
+			return valid ? unusedBufferTop + 1 : (int)MAX_BUFFERS - unusedBufferTop - 1;
+		case TYPE_MAX_ENUM:
+			return 0; 
+	}
+	return 0;
+}
+
+void Source::prepareAtomic()
 {
 	// This Source may now be associated with an OpenAL source that still has
 	// the properties of another love Source. Let's reset it to the settings
 	// of the new one.
 	reset();
 
-	if (type == TYPE_STATIC)
+	switch (type)
 	{
-		alSourcei(source, AL_BUFFER, staticBuffer->getBuffer());
-	}
-	else if (type == TYPE_STREAM)
-	{
-		int usedBuffers = 0;
+		case TYPE_STATIC:
+			alSourcei(source, AL_BUFFER, staticBuffer->getBuffer());
+			break;
+		case TYPE_STREAM:
+			while (unusedBufferPeek() != AL_NONE)
+			{
+				if(streamAtomic(unusedBufferPeek(), decoder.get()) == 0)
+					break;
 
-		for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+				alSourceQueueBuffers(source, 1, unusedBufferPop());
+
+				if (decoder->isFinished())
+					break;
+			}
+			break;
+		case TYPE_QUEUE:
 		{
-			if (streamAtomic(streamBuffers[i], decoder.get()) == 0)
-				break;
+			int top = unusedBufferTop;
+			//when queue source is stopped, loaded buffers are stored in unused buffers stack
+			while (unusedBufferPeek() != AL_NONE)
+				alSourceQueueBuffers(source, 1, unusedBufferPop());
+			//construct a stack of unused buffers (beyond the end of stack)
+			for (unsigned int i = top + 1; i < MAX_BUFFERS; i++)
+				unusedBufferPush(unusedBuffers[i]);
 
-			++usedBuffers;
-
-			if (decoder->isFinished())
-				break;
+			break;
 		}
-
-		if (usedBuffers > 0)
-			alSourceQueueBuffers(source, usedBuffers, streamBuffers);
+		case TYPE_MAX_ENUM:
+			break;
 	}
+}
+
+void Source::teardownAtomic()
+{
+	switch (type)
+	{
+		case TYPE_STATIC:
+			break;
+		case TYPE_STREAM:
+		{
+			ALint queued;
+			ALuint buffer;
+
+			decoder->seek(0);
+			// drain buffers
+			//since we only unqueue 1 buffer, it's OK to use singular variable pointer instead of array
+			alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
+			for (unsigned int i = 0; i < (unsigned int)queued; i++)
+				alSourceUnqueueBuffers(source, 1, &buffer);
+
+			// generate unused buffers list
+			for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+				unusedBuffers[i] = streamBuffers[i];
+
+			unusedBufferTop = MAX_BUFFERS - 1;
+			break;
+		}
+		case TYPE_QUEUE:
+		{
+			ALint queued;
+			ALuint buffer;
+
+			alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
+			for (unsigned int i = (unsigned int)queued; i > 0; i--)
+				alSourceUnqueueBuffers(source, 1, &buffer);
+
+			// generate unused buffers list
+			for (unsigned int i = 0; i < MAX_BUFFERS; i++)
+				unusedBuffers[i] = streamBuffers[i];
+
+			unusedBufferTop = -1;
+			break;
+		}
+		case TYPE_MAX_ENUM:
+			break;
+	}
+
+	alSourcei(source, AL_BUFFER, AL_NONE);
+
+	toLoop = 0;
+	valid = false;
+	offsetSamples = offsetSeconds = 0;
+}
+
+bool Source::playAtomic(ALuint source)
+{
+	this->source = source;
+	prepareAtomic();
 
 	// Clear errors.
 	alGetError();
 
 	alSourcePlay(source);
 
-	// alSourcePlay may fail if the system has reached its limit of simultaneous
-	// playing sources.
 	bool success = alGetError() == AL_NO_ERROR;
 
-	valid = true; //if it fails it will be set to false again
-	//but this prevents a horrible, horrible bug
+	if (type == TYPE_STREAM)
+	{
+		valid = true; //isPlaying() needs source to be valid
+		if (!isPlaying())
+			success = false;
+	}
+	else if (success)
+	{
+		alSourcef(source, AL_SAMPLE_OFFSET, offsetSamples);
+		success = alGetError() == AL_NO_ERROR;
+	}
+
+	if (!success)
+	{
+		valid = true; //stop() needs source to be valid
+		stop();
+	}
+	else if (type != TYPE_STREAM)
+		offsetSamples = offsetSeconds = 0;
+
+	//this is set to success state afterwards anyway, but setting it here
+	//to true preemptively avoids race condition with update bug
+	valid = true; 
 
 	return success;
 }
 
 void Source::stopAtomic()
 {
-	if (valid)
-	{
-		if (type == TYPE_STATIC)
-			alSourceStop(source);
-		else if (type == TYPE_STREAM)
-		{
-			alSourceStop(source);
-			int queued = 0;
-			alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
-
-			while (queued--)
-			{
-				ALuint buffer;
-				alSourceUnqueueBuffers(source, 1, &buffer);
-			}
-		}
-
-		alSourcei(source, AL_BUFFER, AL_NONE);
-	}
-
-	toLoop = 0;
-	valid = false;
+	if (!valid)
+		return;
+	alSourceStop(source);
+	teardownAtomic();
 }
 
 void Source::pauseAtomic()
 {
 	if (valid)
-	{
 		alSourcePause(source);
-		paused = true;
-	}
 }
 
 void Source::resumeAtomic()
 {
-	if (valid && paused)
+	if (valid && !isPlaying())
 	{
 		alSourcePlay(source);
-		paused = false;
+
+		if (alGetError() == AL_INVALID_VALUE || (type == TYPE_STREAM && unusedBufferTop == MAX_BUFFERS - 1))
+			stop();
 	}
 }
 
-void Source::rewindAtomic()
+bool Source::playAtomic(const std::vector<love::audio::Source*> &sources, const std::vector<ALuint> &ids, const std::vector<char> &wasPlaying)
 {
-	if (valid && type == TYPE_STATIC)
+	if (sources.size() == 0)
+		return true;
+
+	std::vector<ALuint> toPlay;
+	toPlay.reserve(sources.size());
+	for (size_t i = 0; i < sources.size(); i++)
 	{
-		alSourceRewind(source);
-		if (!paused)
-			alSourcePlay(source);
+		if (wasPlaying[i])
+			continue;
+		Source *source = (Source*) sources[i];
+		source->source = ids[i];
+		source->prepareAtomic();
+		toPlay.push_back(ids[i]);
 	}
-	else if (valid && type == TYPE_STREAM)
+
+	alGetError();
+	alSourcePlayv((ALsizei) toPlay.size(), &toPlay[0]);
+	bool success = alGetError() == AL_NO_ERROR;
+
+	for (auto &_source : sources)
 	{
-		bool waspaused = paused;
-		decoder->rewind();
-		// Because we still have old data
-		// from before the seek in the buffers
-		// let's empty them.
-		stopAtomic();
-		playAtomic();
-		if (waspaused)
-			pauseAtomic();
-		offsetSamples = 0;
-		offsetSeconds = 0;
+		Source *source = (Source*) _source;
+		source->valid = source->valid || success;
+
+		if (success && source->type != TYPE_STREAM)
+			source->offsetSamples = source->offsetSeconds = 0;
 	}
-	else if (type == TYPE_STREAM)
+
+	return success;
+}
+
+void Source::stopAtomic(const std::vector<love::audio::Source*> &sources)
+{
+	if (sources.size() == 0)
+		return;
+
+	std::vector<ALuint> sourceIds;
+	sourceIds.reserve(sources.size());
+	for (auto &_source : sources)
 	{
-		decoder->rewind();
-		offsetSamples = 0;
-		offsetSeconds = 0;
+		Source *source = (Source*) _source;
+		if (source->valid)
+			sourceIds.push_back(source->source);
 	}
+
+	alSourceStopv((ALsizei) sources.size(), &sourceIds[0]);
+
+	for (auto &_source : sources)
+	{
+		Source *source = (Source*) _source;
+		if (source->valid)
+			source->teardownAtomic();
+	}
+}
+
+void Source::pauseAtomic(const std::vector<love::audio::Source*> &sources)
+{
+	if (sources.size() == 0)
+		return;
+
+	std::vector<ALuint> sourceIds;
+	sourceIds.reserve(sources.size());
+	for (auto &_source : sources)
+	{
+		Source *source = (Source*) _source;
+		if (source->valid)
+			sourceIds.push_back(source->source);
+	}
+
+	alSourcePausev((ALsizei) sources.size(), &sourceIds[0]);
 }
 
 void Source::reset()
 {
-	alSourcei(source, AL_BUFFER, 0);
+	alSourcei(source, AL_BUFFER, AL_NONE);
 	alSourcefv(source, AL_POSITION, position);
 	alSourcefv(source, AL_VELOCITY, velocity);
 	alSourcefv(source, AL_DIRECTION, direction);
@@ -765,6 +1018,33 @@ ALenum Source::getFormat(int channels, int bitDepth) const
 #endif
 
 	return 0;
+}
+
+ALuint Source::unusedBufferPeek()
+{
+	return (unusedBufferTop < 0) ? AL_NONE : unusedBuffers[unusedBufferTop];
+}
+
+ALuint Source::unusedBufferPeekNext()
+{
+	return (unusedBufferTop >= (int)MAX_BUFFERS - 1) ? AL_NONE : unusedBuffers[unusedBufferTop + 1];
+}
+
+ALuint *Source::unusedBufferPop()
+{
+	return &unusedBuffers[unusedBufferTop--];
+}
+
+void Source::unusedBufferPush(ALuint buffer)
+{
+	unusedBuffers[++unusedBufferTop] = buffer;
+}
+
+void Source::unusedBufferQueue(ALuint buffer)
+{
+	for (unsigned int i = ++unusedBufferTop; i > 0; i--)
+		unusedBuffers[i] = unusedBuffers[i - 1];
+	unusedBuffers[0] = buffer;
 }
 
 int Source::streamAtomic(ALuint buffer, love::sound::Decoder *d)

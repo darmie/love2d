@@ -18,55 +18,21 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#include "Decoder.h"
+#ifndef LOVE_HALF_FLOAT_H
+#define LOVE_HALF_FLOAT_H
 
-#include "common/Exception.h"
+#include "int.h"
 
 namespace love
 {
-namespace sound
-{
-namespace lullaby
-{
 
-Decoder::Decoder(Data *data, const std::string &ext, int bufferSize)
-	: data(data)
-	, ext(ext)
-	, bufferSize(bufferSize)
-	, sampleRate(DEFAULT_SAMPLE_RATE)
-	, buffer(0)
-	, eof(false)
-{
-	buffer = new char[bufferSize];
-}
+typedef uint16 half;
 
-Decoder::~Decoder()
-{
-	if (buffer != 0)
-		delete [](char *) buffer;
-}
+void halfInit();
 
-void *Decoder::getBuffer() const
-{
-	return buffer;
-}
+float halfToFloat(half h);
+half floatToHalf(float f);
 
-int Decoder::getSize() const
-{
-	return bufferSize;
-}
-
-int Decoder::getSampleRate() const
-{
-	return sampleRate;
-}
-
-bool Decoder::isFinished()
-{
-	return eof;
-}
-
-
-} // lullaby
-} // sound
 } // love
+
+#endif // LOVE_HALF_FLOAT_H

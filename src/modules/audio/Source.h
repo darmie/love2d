@@ -38,6 +38,7 @@ public:
 	{
 		TYPE_STATIC,
 		TYPE_STREAM,
+		TYPE_QUEUE,
 		TYPE_MAX_ENUM
 	};
 
@@ -56,10 +57,7 @@ public:
 	virtual bool play() = 0;
 	virtual void stop() = 0;
 	virtual void pause() = 0;
-	virtual void resume() = 0;
-	virtual void rewind() = 0;
-	virtual bool isStopped() const = 0;
-	virtual bool isPaused() const = 0;
+	virtual bool isPlaying() const = 0;
 	virtual bool isFinished() const = 0;
 	virtual bool update() = 0;
 
@@ -103,6 +101,10 @@ public:
 	virtual float getMaxDistance() const = 0;
 
 	virtual int getChannels() const = 0;
+
+	virtual int getFreeBufferCount() const = 0;
+	virtual bool queue(void *data, size_t length, int dataSampleRate, int dataBitDepth, int dataChannels) = 0;
+
 	virtual Type getType() const;
 
 	static bool getConstant(const char *in, Type &out);

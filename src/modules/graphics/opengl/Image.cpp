@@ -66,6 +66,8 @@ static bool verifyMipmapLevels(const std::vector<T> &miplevels)
 	int width  = miplevels[0]->getWidth();
 	int height = miplevels[0]->getHeight();
 
+	auto format = miplevels[0]->getFormat();
+
 	int expectedlevels = getMipmapCount(width, height);
 
 	// All mip levels must be present when not using auto-generated mipmaps.
@@ -82,6 +84,9 @@ static bool verifyMipmapLevels(const std::vector<T> &miplevels)
 			throw love::Exception("Width of image mipmap level %d is incorrect (expected %d, got %d)", i+1, width, miplevels[i]->getWidth());
 		if (miplevels[i]->getHeight() != height)
 			throw love::Exception("Height of image mipmap level %d is incorrect (expected %d, got %d)", i+1, height, miplevels[i]->getHeight());
+
+		if (miplevels[i]->getFormat() != format)
+			throw love::Exception("All image mipmap levels must have the same format.");
 	}
 
 	return true;
@@ -140,12 +145,8 @@ Image::Image(const std::vector<love::image::CompressedImageData *> &compressedda
 		}
 	}
 
-	for (const auto &cd : compresseddata)
-	{
+	for (image::CompressedImageData *cd : compresseddata)
 		cdata.push_back(cd);
-		if (cd->getFormat() != cdata[0]->getFormat())
-			throw love::Exception("All image mipmap levels must have the same format.");
-	}
 
 	preload();
 	loadVolatile();
@@ -217,7 +218,7 @@ void Image::loadDefaultTexture()
 {
 	usingDefaultTexture = true;
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 	setFilter(filter);
 
 	// A nice friendly checkerboard to signify invalid textures...
@@ -256,15 +257,12 @@ void Image::loadFromCompressedData()
 
 void Image::loadFromImageData()
 {
-	GLenum iformat = sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
-	GLenum format  = GL_RGBA;
+	GLenum glformat = GL_RGBA;
+	GLenum gltype = GL_UNSIGNED_BYTE;
+	GLenum iformat = getFormat(data[0]->getFormat(), glformat, gltype, sRGB);
 
-	// in GLES2, the internalformat and format params of TexImage have to match.
-	if (GLAD_ES_VERSION_2_0 && !GLAD_ES_VERSION_3_0)
-	{
-		format  = sRGB ? GL_SRGB_ALPHA : GL_RGBA;
-		iformat = format;
-	}
+	if (isGammaCorrect() && !sRGB)
+		flags.linear = true;
 
 	int mipcount = flags.mipmaps ? (int) data.size() : 1;
 
@@ -274,7 +272,7 @@ void Image::loadFromImageData()
 		love::thread::Lock lock(id->getMutex());
 
 		glTexImage2D(GL_TEXTURE_2D, i, iformat, id->getWidth(), id->getHeight(),
-		             0, format, GL_UNSIGNED_BYTE, id->getData());
+		             0, glformat, gltype, id->getData());
 	}
 
 	if (data.size() <= 1)
@@ -322,7 +320,7 @@ bool Image::loadVolatile()
 		glGetFloatv(GL_MAX_TEXTURE_LOD_BIAS, &maxMipmapSharpness);
 
 	glGenTextures(1, &texture);
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 
 	setFilter(filter);
 	setWrap(wrap);
@@ -408,7 +406,7 @@ bool Image::refresh(int xoffset, int yoffset, int w, int h)
 
 	OpenGL::TempDebugGroup debuggroup("Image refresh");
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 
 	if (isCompressed())
 	{
@@ -416,12 +414,9 @@ bool Image::refresh(int xoffset, int yoffset, int w, int h)
 		return true;
 	}
 
-	GLenum format = GL_RGBA;
-
-	// In ES2, the format parameter of TexSubImage must match the internal
-	// format of the texture.
-	if (sRGB && (GLAD_ES_VERSION_2_0 && !GLAD_ES_VERSION_3_0))
-		format = GL_SRGB_ALPHA;
+	GLenum glformat = GL_RGBA;
+	GLenum gltype = GL_UNSIGNED_BYTE;
+	getFormat(data[0]->getFormat(), glformat, gltype, sRGB);
 
 	int mipcount = flags.mipmaps ? (int) data.size() : 1;
 
@@ -432,8 +427,8 @@ bool Image::refresh(int xoffset, int yoffset, int w, int h)
 		pdata += yoffset * data[i]->getWidth() + xoffset;
 
 		thread::Lock lock(data[i]->getMutex());
-		glTexSubImage2D(GL_TEXTURE_2D, i, xoffset, yoffset, w, h, format,
-						GL_UNSIGNED_BYTE, pdata);
+		glTexSubImage2D(GL_TEXTURE_2D, i, xoffset, yoffset, w, h, glformat,
+		                gltype, pdata);
 
 		xoffset /= 2;
 		yoffset /= 2;
@@ -454,10 +449,11 @@ void Image::drawv(const Matrix4 &t, const Vertex *v)
 	OpenGL::TempTransform transform(gl);
 	transform.get() *= t;
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 
 	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD);
 
+	gl.bindBuffer(BUFFER_VERTEX, 0);
 	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &v[0].x);
 	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &v[0].s);
 
@@ -465,18 +461,14 @@ void Image::drawv(const Matrix4 &t, const Vertex *v)
 	gl.drawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-void Image::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Image::draw(const Matrix4 &m)
 {
-	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
-
-	drawv(t, vertices);
+	drawv(m, vertices);
 }
 
-void Image::drawq(Quad *quad, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Image::drawq(Quad *quad, const Matrix4 &m)
 {
-	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
-
-	drawv(t, quad->getVertices());
+	drawv(m, quad->getVertices());
 }
 
 const void *Image::getHandle() const
@@ -506,6 +498,14 @@ void Image::setFilter(const Texture::Filter &f)
 
 	filter = f;
 
+	if (!data.empty() && !hasTextureFilteringSupport(data[0]->getFormat()))
+	{
+		filter.mag = filter.min = FILTER_NEAREST;
+
+		if (filter.mipmap == FILTER_LINEAR)
+			filter.mipmap = FILTER_NEAREST;
+	}
+
 	// We don't want filtering or (attempted) mipmaps on the default texture.
 	if (usingDefaultTexture)
 	{
@@ -513,7 +513,7 @@ void Image::setFilter(const Texture::Filter &f)
 		filter.min = filter.mag = FILTER_NEAREST;
 	}
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 	gl.setTextureFilter(filter);
 }
 
@@ -540,7 +540,7 @@ bool Image::setWrap(const Texture::Wrap &w)
 			wrap.t = WRAP_CLAMP;
 	}
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 	gl.setTextureWrap(wrap);
 
 	return success;
@@ -555,7 +555,7 @@ void Image::setMipmapSharpness(float sharpness)
 	// LOD bias has the range (-maxbias, maxbias)
 	mipmapSharpness = std::min(std::max(sharpness, -maxMipmapSharpness + 0.01f), maxMipmapSharpness - 0.01f);
 
-	gl.bindTexture(texture);
+	gl.bindTextureToUnit(texture, 0, false);
 
 	// negative bias is sharper
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -mipmapSharpness);
@@ -594,6 +594,53 @@ Texture::FilterMode Image::getDefaultMipmapFilter()
 bool Image::isCompressed() const
 {
 	return compressed;
+}
+
+GLenum Image::getFormat(image::ImageData::Format format, GLenum &glformat, GLenum &gltype, bool &isSRGB) const
+{
+	using image::ImageData;
+
+	GLenum internalformat = GL_RGBA8;
+	glformat = GL_RGBA;
+	gltype = GL_UNSIGNED_BYTE;
+
+	switch (format)
+	{
+	case ImageData::FORMAT_RGBA8:
+		if (isSRGB)
+		{
+			internalformat = GL_SRGB8_ALPHA8;
+			if (GLAD_ES_VERSION_2_0 && !GLAD_ES_VERSION_3_0)
+				glformat = GL_SRGB_ALPHA;
+		}
+		break;
+	case ImageData::FORMAT_RGBA16:
+		internalformat = GL_RGBA16;
+		gltype = GL_UNSIGNED_SHORT;
+		isSRGB = false;
+		break;
+	case ImageData::FORMAT_RGBA16F:
+		internalformat = GL_RGBA16F;
+		// HALF_FLOAT_OES has a different value than HALF_FLOAT... of course
+		if (GLAD_OES_texture_half_float && !GLAD_ES_VERSION_3_0)
+			gltype = GL_HALF_FLOAT_OES;
+		else
+			gltype = GL_HALF_FLOAT;
+		isSRGB = false;
+		break;
+	case ImageData::FORMAT_RGBA32F:
+		internalformat = GL_RGBA32F;
+		gltype = GL_FLOAT;
+		isSRGB = false;
+		break;
+	default:
+		break;
+	}
+
+	if (GLAD_ES_VERSION_2_0 && !GLAD_ES_VERSION_3_0)
+		internalformat = glformat;
+
+	return internalformat;
 }
 
 GLenum Image::getCompressedFormat(image::CompressedImageData::Format cformat, bool &isSRGB) const
@@ -699,6 +746,38 @@ GLenum Image::getCompressedFormat(image::CompressedImageData::Format cformat, bo
 bool Image::hasAnisotropicFilteringSupport()
 {
 	return GLAD_EXT_texture_filter_anisotropic != GL_FALSE;
+}
+
+bool Image::hasTextureSupport(image::ImageData::Format format)
+{
+	using image::ImageData;
+
+	switch (format)
+	{
+	case ImageData::FORMAT_RGBA8:
+		return true;
+	case ImageData::FORMAT_RGBA16:
+		return GLAD_VERSION_1_1 || GLAD_EXT_texture_norm16;
+	case ImageData::FORMAT_RGBA16F:
+		return GLAD_VERSION_3_0 || (GLAD_ARB_texture_float && GLAD_ARB_half_float_pixel) || GLAD_ES_VERSION_3_0 || GLAD_OES_texture_half_float;
+	case ImageData::FORMAT_RGBA32F:
+		return GLAD_VERSION_3_0 || GLAD_ARB_texture_float || GLAD_ES_VERSION_3_0 || GLAD_OES_texture_float;
+	default:
+		return false;
+	}
+}
+
+bool Image::hasTextureFilteringSupport(image::ImageData::Format format)
+{
+	switch (format)
+	{
+	case image::ImageData::FORMAT_RGBA16F:
+		return GLAD_VERSION_1_1 || GLAD_ES_VERSION_3_0 || GLAD_OES_texture_half_float_linear;
+	case image::ImageData::FORMAT_RGBA32F:
+		return GLAD_VERSION_1_1;
+	default:
+		return true;
+	}
 }
 
 bool Image::hasCompressedTextureSupport(image::CompressedImageData::Format format, bool sRGB)

@@ -169,7 +169,7 @@ void Font::createTexture()
 	else
 		glGenTextures(1, &t);
 
-	gl.bindTexture(t);
+	gl.bindTextureToUnit(t, 0, false);
 
 	gl.setTextureFilter(filter);
 
@@ -288,7 +288,7 @@ const Font::Glyph &Font::addGlyph(uint32 glyph)
 		GLenum format = getTextureFormat(type);
 		g.texture = textures.back();
 
-		gl.bindTexture(g.texture);
+		gl.bindTextureToUnit(g.texture, 0, false);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, textureX, textureY, w, h,
 		                format, GL_UNSIGNED_BYTE, gd->getData());
 
@@ -402,7 +402,7 @@ void Font::getCodepointsFromString(const std::vector<ColoredString> &strs, Color
 	{
 		IndexedColor c = codepoints.colors[0];
 
-		if (c.index == 0 && c.color == Color(255, 255, 255, 255))
+		if (c.index == 0 && c.color == Colorf(1.0f, 1.0f, 1.0f, 1.0f))
 			codepoints.colors.pop_back();
 	}
 }
@@ -439,7 +439,13 @@ std::vector<Font::DrawCommand> Font::generateVertices(const ColoredCodepoints &c
 		uint32 g = codepoints.cps[i];
 
 		if (curcolori + 1 < ncolors && codepoints.colors[curcolori + 1].index == i)
-			curcolor = codepoints.colors[++curcolori].color;
+		{
+			const Colorf &c = codepoints.colors[++curcolori].color;
+			curcolor.r = (unsigned char) (c.r * 255.0f);
+			curcolor.g = (unsigned char) (c.g * 255.0f);
+			curcolor.b = (unsigned char) (c.b * 255.0f);
+			curcolor.a = (unsigned char) (c.a * 255.0f);
+		}
 
 		if (g == '\n')
 		{
@@ -451,6 +457,10 @@ std::vector<Font::DrawCommand> Font::generateVertices(const ColoredCodepoints &c
 			dx = offset.x;
 			continue;
 		}
+
+		// Ignore carriage returns
+		if (g == '\r')
+			continue;
 
 		uint32 cacheid = textureCacheID;
 
@@ -529,7 +539,7 @@ std::vector<Font::DrawCommand> Font::generateVertices(const ColoredCodepoints &c
 		info->width = maxwidth - offset.x;;
 		info->height = (int) dy + (dx > 0.0f ? floorf(getHeight() * getLineHeight() + 0.5f) : 0) - offset.y;
 	}
-	
+
 	return commands;
 }
 
@@ -542,7 +552,6 @@ std::vector<Font::DrawCommand> Font::generateVertices(const std::string &text, s
 
 std::vector<Font::DrawCommand> Font::generateVerticesFormatted(const ColoredCodepoints &text, float wrap, AlignMode align, std::vector<GlyphVertex> &vertices, TextInfo *info)
 {
-	
 	wrap = std::max(wrap, 0.0f);
 
 	uint32 cacheid = textureCacheID;
@@ -654,6 +663,8 @@ void Font::drawVertices(const std::vector<DrawCommand> &drawcommands, bool buffe
 	// with client-side vertex arrays.
 	if (bufferedvertices)
 		quadIndices.getBuffer()->bind();
+	else
+		gl.bindBuffer(BUFFER_INDEX, 0);
 
 	// We need a separate draw call for every section of the text which uses a
 	// different texture than the previous section.
@@ -663,16 +674,13 @@ void Font::drawVertices(const std::vector<DrawCommand> &drawcommands, bool buffe
 		size_t offset = (cmd.startvertex / 4) * 6 * elemsize;
 
 		// TODO: Use glDrawElementsBaseVertex when supported?
-		gl.bindTexture(cmd.texture);
+		gl.bindTextureToUnit(cmd.texture, 0, false);
 
 		if (bufferedvertices)
 			gl.drawElements(GL_TRIANGLES, count, gltype, quadIndices.getPointer(offset));
 		else
 			gl.drawElements(GL_TRIANGLES, count, gltype, quadIndices.getIndices(offset));
 	}
-
-	if (bufferedvertices)
-		quadIndices.getBuffer()->unbind();
 }
 
 void Font::printv(const Matrix4 &t, const std::vector<DrawCommand> &drawcommands, const std::vector<GlyphVertex> &vertices)
@@ -685,6 +693,7 @@ void Font::printv(const Matrix4 &t, const std::vector<DrawCommand> &drawcommands
 	OpenGL::TempTransform transform(gl);
 	transform.get() *= t;
 
+	gl.bindBuffer(BUFFER_VERTEX, 0);
 	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(GlyphVertex), &vertices[0].x);
 	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_UNSIGNED_SHORT, GL_TRUE, sizeof(GlyphVertex), &vertices[0].s);
 	glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GlyphVertex), &vertices[0].color.r);
@@ -694,7 +703,7 @@ void Font::printv(const Matrix4 &t, const std::vector<DrawCommand> &drawcommands
 	drawVertices(drawcommands, false);
 }
 
-void Font::print(const std::vector<ColoredString> &text, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Font::print(const std::vector<ColoredString> &text, const Matrix4 &m)
 {
 	ColoredCodepoints codepoints;
 	getCodepointsFromString(text, codepoints);
@@ -702,12 +711,10 @@ void Font::print(const std::vector<ColoredString> &text, float x, float y, float
 	std::vector<GlyphVertex> vertices;
 	std::vector<DrawCommand> drawcommands = generateVertices(codepoints, vertices);
 
-	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
-
-	printv(t, drawcommands, vertices);
+	printv(m, drawcommands, vertices);
 }
 
-void Font::printf(const std::vector<ColoredString> &text, float x, float y, float wrap, AlignMode align, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Font::printf(const std::vector<ColoredString> &text, float wrap, AlignMode align, const Matrix4 &m)
 {
 	ColoredCodepoints codepoints;
 	getCodepointsFromString(text, codepoints);
@@ -715,9 +722,7 @@ void Font::printf(const std::vector<ColoredString> &text, float x, float y, floa
 	std::vector<GlyphVertex> vertices;
 	std::vector<DrawCommand> drawcommands = generateVerticesFormatted(codepoints, wrap, align, vertices);
 
-	Matrix4 t(x, y, angle, sx, sy, ox, oy, kx, ky);
-
-	printv(t, drawcommands, vertices);
+	printv(m, drawcommands, vertices);
 }
 
 int Font::getWidth(const std::string &str)
@@ -740,6 +745,10 @@ int Font::getWidth(const std::string &str)
 			while (i != end)
 			{
 				uint32 c = *i++;
+
+				// Ignore carriage returns
+				if (c == '\r')
+					continue;
 
 				const Glyph &g = findGlyph(c);
 				width += g.spacing + getKerning(prevglyph, c);
@@ -777,7 +786,7 @@ void Font::getWrap(const ColoredCodepoints &codepoints, float wraplimit, std::ve
 	// Keeping the indexed colors "in sync" is a bit tricky, since we split
 	// things up and we might skip some glyphs but we don't want to skip any
 	// color which starts at those indices.
-	Color curcolor(255, 255, 255, 255);
+	Colorf curcolor(1.0f, 1.0f, 1.0f, 1.0f);
 	bool addcurcolor = false;
 	int curcolori = -1;
 	int endcolori = (int) codepoints.colors.size() - 1;
@@ -818,6 +827,13 @@ void Font::getWrap(const ColoredCodepoints &codepoints, float wraplimit, std::ve
 			wline.colors.clear();
 			i++;
 
+			continue;
+		}
+
+		// Ignore carriage returns
+		if (c == '\r')
+		{
+			i++;
 			continue;
 		}
 
@@ -960,7 +976,7 @@ void Font::setFilter(const Texture::Filter &f)
 
 	for (GLuint texture : textures)
 	{
-		gl.bindTexture(texture);
+		gl.bindTextureToUnit(texture, 0, false);
 		gl.setTextureFilter(filter);
 	}
 }

@@ -24,6 +24,7 @@
 // STD
 #include <stack>
 #include <vector>
+#include <unordered_map>
 
 // OpenGL
 #include "OpenGL.h"
@@ -34,8 +35,6 @@
 
 #include "image/Image.h"
 #include "image/ImageData.h"
-
-#include "window/Window.h"
 
 #include "video/VideoStream.h"
 
@@ -53,21 +52,63 @@
 
 namespace love
 {
+
+class Reference;
+
 namespace graphics
 {
 namespace opengl
 {
 
+struct PassInfo
+{
+	enum BeginAction
+	{
+		BEGIN_LOAD,
+		BEGIN_CLEAR,
+		BEGIN_DISCARD,
+	};
+
+	enum EndAction
+	{
+		END_STORE,
+		END_DISCARD,
+	};
+
+	struct ColorAttachment
+	{
+		Canvas *canvas = nullptr;
+		Colorf clearColor = Colorf(0.0f, 0.0f, 0.0f, 0.0f);
+		BeginAction beginAction = BEGIN_LOAD;
+	};
+
+	ColorAttachment colorAttachments[MAX_COLOR_RENDER_TARGETS];
+	int colorAttachmentCount = 0;
+
+	bool stencil = false;
+
+	bool addColorAttachment(const ColorAttachment &attachment)
+	{
+		if (colorAttachmentCount + 1 < MAX_COLOR_RENDER_TARGETS)
+		{
+			colorAttachments[colorAttachmentCount++] = attachment;
+			return true;
+		}
+
+		return false;
+	}
+};
+
 class Graphics : public love::graphics::Graphics
 {
 public:
 
-	struct OptionalColorf
-	{
-		float r, g, b, a;
-		bool enabled;
+	typedef void (*ScreenshotCallback)(love::image::ImageData *i, Reference *ref, void *ud);
 
-		Colorf toColor() const { return Colorf(r, g, b, a); }
+	struct ScreenshotInfo
+	{
+		ScreenshotCallback callback;
+		Reference *ref;
 	};
 
 	Graphics();
@@ -92,25 +133,19 @@ public:
 	 **/
 	void reset();
 
-	/**
-	 * Clears the screen to a specific color.
-	 **/
-	void clear(Colorf c);
+	void beginPass(PassInfo::BeginAction beginAction, Colorf clearColor);
+	void beginPass(const PassInfo &info);
 
-	/**
-	 * Clears each active canvas to a different color.
-	 **/
-	void clear(const std::vector<OptionalColorf> &colors);
+	void endPass();
+	void endPass(int sX, int sY, int sW, int sH, const ScreenshotInfo *info, void *screenshotCallbackData);
 
-	/**
-	 * Discards the contents of the screen.
-	 **/
-	void discard(const std::vector<bool> &colorbuffers, bool stencil);
+	const PassInfo &getActivePass() const;
+	virtual bool isPassActive() const;
 
 	/**
 	 * Flips buffers. (Rendered geometry is presented on screen).
 	 **/
-	void present();
+	void present(void *screenshotCallbackData);
 
 	/**
 	 * Gets the width of the current graphics viewport.
@@ -121,6 +156,9 @@ public:
 	 * Gets the height of the current graphics viewport.
 	 **/
 	int getHeight() const;
+
+	int getPassWidth() const;
+	int getPassHeight() const;
 
 	/**
 	 * True if a graphics viewport is set.
@@ -231,13 +269,6 @@ public:
 
 	Shader *getShader() const;
 
-	void setCanvas(Canvas *canvas);
-	void setCanvas(const std::vector<Canvas *> &canvases);
-	void setCanvas(const std::vector<StrongRef<Canvas>> &canvases);
-	void setCanvas();
-
-	std::vector<Canvas *> getCanvas() const;
-
 	/**
 	 * Sets the enabled color components when rendering.
 	 **/
@@ -330,38 +361,18 @@ public:
 	 **/
 	bool isWireframe() const;
 
-	/**
-	 * Draws text at the specified coordinates, with rotation and
-	 * scaling along both axes.
-	 * @param x The x-coordinate.
-	 * @param y The y-coordinate.
-	 * @param angle The amount of rotation.
-	 * @param sx The scale factor along the x-axis. (1 = normal).
-	 * @param sy The scale factor along the y-axis. (1 = normal).
-	 * @param ox The origin offset along the x-axis.
-	 * @param oy The origin offset along the y-axis.
-	 * @param kx Shear along the x-axis.
-	 * @param ky Shear along the y-axis.
-	 **/
-	void print(const std::vector<Font::ColoredString> &str, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	void draw(Drawable *drawable, const Matrix4 &m);
+	void drawq(Texture *texture, Quad *quad, const Matrix4 &m);
 
 	/**
-	 * Draw formatted text on screen at the specified coordinates.
-	 *
-	 * @param str A string of text.
-	 * @param x The x-coordinate.
-	 * @param y The y-coordinate.
-	 * @param wrap The maximum width of the text area.
-	 * @param align Where to align the text.
-	 * @param angle The amount of rotation.
-	 * @param sx The scale factor along the x-axis. (1 = normal).
-	 * @param sy The scale factor along the y-axis. (1 = normal).
-	 * @param ox The origin offset along the x-axis.
-	 * @param oy The origin offset along the y-axis.
-	 * @param kx Shear along the x-axis.
-	 * @param ky Shear along the y-axis.
+	 * Draws text at the specified coordinates
 	 **/
-	void printf(const std::vector<Font::ColoredString> &str, float x, float y, float wrap, Font::AlignMode align, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	void print(const std::vector<Font::ColoredString> &str, const Matrix4 &m);
+
+	/**
+	 * Draws formatted text on screen at the specified coordinates.
+	 **/
+	void printf(const std::vector<Font::ColoredString> &str, float wrap, Font::AlignMode align, const Matrix4 &m);
 
 	/**
 	 * Draws a point at (x,y).
@@ -397,7 +408,8 @@ public:
 	 * @param ry The radius of the corners on the y axis
 	 * @param points The number of points to use per corner
 	 **/
-	void rectangle(DrawMode mode, float x, float y, float w, float h, float rx, float ry, int points = 10);
+	void rectangle(DrawMode mode, float x, float y, float w, float h, float rx, float ry, int points);
+	void rectangle(DrawMode mode, float x, float y, float w, float h, float rx, float ry);
 
 	/**
 	 * Draws a circle using the specified arguments.
@@ -407,7 +419,8 @@ public:
 	 * @param radius Radius of the circle.
 	 * @param points Number of points to use to draw the circle.
 	 **/
-	void circle(DrawMode mode, float x, float y, float radius, int points = 10);
+	void circle(DrawMode mode, float x, float y, float radius, int points);
+	void circle(DrawMode mode, float x, float y, float radius);
 
 	/**
 	 * Draws an ellipse using the specified arguments.
@@ -418,7 +431,8 @@ public:
 	 * @param b Radius in y-direction
 	 * @param points Number of points to use to draw the circle.
 	 **/
-	void ellipse(DrawMode mode, float x, float y, float a, float b, int points = 10);
+	void ellipse(DrawMode mode, float x, float y, float a, float b, int points);
+	void ellipse(DrawMode mode, float x, float y, float a, float b);
 
 	/**
 	 * Draws an arc using the specified arguments.
@@ -431,7 +445,8 @@ public:
 	 * @param angle2 The angle at which the arc terminates.
 	 * @param points Number of points to use to draw the arc.
 	 **/
-	void arc(DrawMode drawmode, ArcMode arcmode, float x, float y, float radius, float angle1, float angle2, int points = 10);
+	void arc(DrawMode drawmode, ArcMode arcmode, float x, float y, float radius, float angle1, float angle2, int points);
+	void arc(DrawMode drawmode, ArcMode arcmode, float x, float y, float radius, float angle1, float angle2);
 
 	/**
 	 * Draws a polygon with an arbitrary number of vertices.
@@ -441,12 +456,7 @@ public:
 	 **/
 	void polygon(DrawMode mode, const float *coords, size_t count);
 
-	/**
-	 * Creates a screenshot of the view and saves it to the default folder.
-	 * @param image The love.image module.
-	 * @param copyAlpha If the alpha channel should be copied or set to full opacity (255).
-	 **/
-	love::image::ImageData *newScreenshot(love::image::Image *image, bool copyAlpha = true);
+	void captureScreenshot(const ScreenshotInfo &info);
 
 	/**
 	 * Returns system-dependent renderer information.
@@ -478,13 +488,15 @@ public:
 	void translate(float x, float y);
 	void shear(float kx, float ky);
 	void origin();
+	Vector transformPoint(Vector point);
+	Vector inverseTransformPoint(Vector point);
 
 private:
 
 	struct DisplayState
 	{
-		Colorf color = Colorf(255.0, 255.0, 255.0, 255.0);
-		Colorf backgroundColor = Colorf(0.0, 0.0, 0.0, 255.0);
+		Colorf color = Colorf(1.0, 1.0, 1.0, 1.0);
+		Colorf backgroundColor = Colorf(0.0, 0.0, 0.0, 1.0);
 
 		BlendMode blendMode = BLEND_ALPHA;
 		BlendAlpha blendAlphaMode = BLENDALPHA_MULTIPLY;
@@ -505,8 +517,6 @@ private:
 		StrongRef<Font> font;
 		StrongRef<Shader> shader;
 
-		std::vector<StrongRef<Canvas>> canvases;
-
 		ColorMask colorMask = ColorMask(true, true, true, true);
 
 		bool wireframe = false;
@@ -517,16 +527,46 @@ private:
 		float defaultMipmapSharpness = 0.0f;
 	};
 
+	struct CurrentPass
+	{
+		PassInfo info;
+		bool active;
+	};
+
+	struct PassBufferInfo
+	{
+		bool stencil;
+		Canvas *canvases[MAX_COLOR_RENDER_TARGETS];
+	};
+
+	struct CachedRenderbuffer
+	{
+		int w;
+		int h;
+		int samples;
+		GLenum attachments[2];
+		GLuint renderbuffer;
+	};
+
 	void restoreState(const DisplayState &s);
 	void restoreStateChecked(const DisplayState &s);
 
+	void bindCachedFBOForPass(const PassInfo &pass);
+	void discard(OpenGL::FramebufferTarget target, const std::vector<bool> &colorbuffers, bool depthstencil);
+	GLuint attachCachedStencilBuffer(int w, int h, int samples);
+
 	void checkSetDefaultFont();
 
-	StrongRef<love::window::Window> currentWindow;
+	int calculateEllipsePoints(float rx, float ry) const;
 
 	StrongRef<Font> defaultFont;
 
 	std::vector<double> pixelSizeStack; // stores current size of a pixel (needed for line drawing)
+
+	std::vector<ScreenshotInfo> pendingScreenshotCallbacks;
+
+	std::unordered_map<uint32, GLuint> framebufferObjects;
+	std::vector<CachedRenderbuffer> stencilBuffers;
 
 	QuadIndices *quadIndices;
 
@@ -535,10 +575,16 @@ private:
 	bool created;
 	bool active;
 
+	bool canCaptureScreenshot;
+
+	CurrentPass currentPass;
+
 	bool writingToStencil;
 
 	std::vector<DisplayState> states;
 	std::vector<StackType> stackTypes; // Keeps track of the pushed stack types.
+
+	int renderPassCount;
 
 	static const size_t MAX_USER_STACK_DEPTH = 64;
 

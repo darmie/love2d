@@ -55,20 +55,7 @@ void Source::pause()
 {
 }
 
-void Source::resume()
-{
-}
-
-void Source::rewind()
-{
-}
-
-bool Source::isStopped() const
-{
-	return true;
-}
-
-bool Source::isPaused() const
+bool Source::isPlaying() const
 {
 	return false;
 }
@@ -228,6 +215,16 @@ float Source::getMaxDistance() const
 int Source::getChannels() const
 {
 	return 2;
+}
+
+int Source::getFreeBufferCount() const
+{
+	return 0;
+}
+
+bool Source::queue(void *, size_t, int, int, int)
+{
+	return false;
 }
 
 } // null

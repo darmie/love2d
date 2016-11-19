@@ -157,6 +157,11 @@ love::audio::Source *Audio::newSource(love::sound::SoundData *soundData)
 	return new Source(pool, soundData);
 }
 
+love::audio::Source *Audio::newSource(int sampleRate, int bitDepth, int channels)
+{
+	return new Source(pool, sampleRate, bitDepth, channels);
+}
+
 int Audio::getSourceCount() const
 {
 	return pool->getSourceCount();
@@ -172,9 +177,19 @@ bool Audio::play(love::audio::Source *source)
 	return source->play();
 }
 
+bool Audio::play(const std::vector<love::audio::Source*> &sources)
+{
+	return pool->play(sources);
+}
+
 void Audio::stop(love::audio::Source *source)
 {
 	source->stop();
+}
+
+void Audio::stop(const std::vector<love::audio::Source*> &sources)
+{
+	return pool->stop(sources);
 }
 
 void Audio::stop()
@@ -187,35 +202,14 @@ void Audio::pause(love::audio::Source *source)
 	source->pause();
 }
 
-void Audio::pause()
+void Audio::pause(const std::vector<love::audio::Source*> &sources)
 {
-	pool->pause();
-#ifdef LOVE_ANDROID
-	alcDevicePauseSOFT(device);
-#endif
+	return pool->pause(sources);
 }
 
-void Audio::resume(love::audio::Source *source)
+std::vector<love::audio::Source*> Audio::pause()
 {
-	source->resume();
-}
-
-void Audio::resume()
-{
-#ifdef LOVE_ANDROID
-	alcDeviceResumeSOFT(device);
-#endif
-	pool->resume();
-}
-
-void Audio::rewind(love::audio::Source *source)
-{
-	source->rewind();
-}
-
-void Audio::rewind()
-{
-	pool->rewind();
+	return pool->pause();
 }
 
 void Audio::setVolume(float volume)

@@ -41,8 +41,6 @@ namespace graphics
 namespace opengl
 {
 
-class Canvas;
-
 // A GLSL shader
 class Shader : public Object, public Volatile
 {
@@ -55,7 +53,7 @@ public:
 		STAGE_MAX_ENUM
 	};
 
-	// Built-in uniform (extern) variables.
+	// Built-in uniform variables.
 	enum BuiltinUniform
 	{
 		BUILTIN_TRANSFORM_MATRIX = 0,
@@ -70,7 +68,7 @@ public:
 		BUILTIN_MAX_ENUM
 	};
 
-	// Types of potential uniform (extern) variables used in love's shaders.
+	// Types of potential uniform variables used in love's shaders.
 	enum UniformType
 	{
 		UNIFORM_FLOAT,
@@ -88,11 +86,21 @@ public:
 		std::string pixel;
 	};
 
+	struct MatrixSize
+	{
+		short columns;
+		short rows;
+	};
+
 	struct UniformInfo
 	{
 		int location;
 		int count;
-		int components;
+		union
+		{
+			int components;
+			MatrixSize matrix;
+		};
 		UniformType baseType;
 		std::string name;
 	};
@@ -146,17 +154,10 @@ public:
 	void sendTexture(const UniformInfo *info, Texture *texture);
 
 	/**
-	 * Gets the type, number of components, and number of array elements of
-	 * an active 'extern' (uniform) variable in the shader. If a uniform
-	 * variable with the specified name doesn't exist, returns UNIFORM_UNKNOWN
-	 * and sets the 'components' and 'count' values to 0.
-	 *
-	 * @param name The name of the uniform variable in the source code.
-	 * @param[out] components Number of components of the variable (2 for vec2.)
-	 * @param[out] count Number of array elements, if the variable is an array.
-	 * @return The base type of the uniform variable.
+	 * Gets whether a uniform with the specified name exists and is actively
+	 * used in the shader.
 	 **/
-	UniformType getExternVariable(const std::string &name, int &components, int &count);
+	bool hasUniform(const std::string &name) const;
 
 	GLint getAttribLocation(const std::string &name);
 
@@ -202,7 +203,8 @@ private:
 	// Map active uniform names to their locations.
 	void mapActiveUniforms();
 
-	int getUniformTypeSize(GLenum type) const;
+	int getUniformTypeComponents(GLenum type) const;
+	MatrixSize getMatrixSize(GLenum type) const;
 	UniformType getUniformBaseType(GLenum type) const;
 
 	GLuint compileCode(ShaderStage stage, const std::string &code);
@@ -241,8 +243,7 @@ private:
 	// Uniform name to retainable objects
 	std::map<std::string, Object*> boundRetainables;
 
-	// Pointer to the active Canvas when the screen params were last checked.
-	Canvas *lastCanvas;
+	bool canvasWasActive;
 	OpenGL::Viewport lastViewport;
 
 	float lastPointSize;
