@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -36,7 +36,7 @@ namespace image
 
 int w_newImageData(lua_State *L)
 {
-	// Case 1: Integers.
+	// Case 1: width & height.
 	if (lua_isnumber(L, 1))
 	{
 		int w = (int) luaL_checknumber(L, 1);
@@ -44,14 +44,23 @@ int w_newImageData(lua_State *L)
 		if (w <= 0 || h <= 0)
 			return luaL_error(L, "Invalid image size.");
 
+		PixelFormat format = PIXELFORMAT_RGBA8;
+
+		if (!lua_isnoneornil(L, 3))
+		{
+			const char *fstr = luaL_checkstring(L, 3);
+			if (!getConstant(fstr, format))
+				return luaL_error(L, "Invalid pixel format: %s", fstr);
+		}
+
 		size_t numbytes = 0;
 		const char *bytes = nullptr;
 
-		if (!lua_isnoneornil(L, 3))
-			bytes = luaL_checklstring(L, 3, &numbytes);
+		if (!lua_isnoneornil(L, 4))
+			bytes = luaL_checklstring(L, 4, &numbytes);
 
 		ImageData *t = nullptr;
-		luax_catchexcept(L, [&](){ t = instance()->newImageData(w, h); });
+		luax_catchexcept(L, [&](){ t = instance()->newImageData(w, h, format); });
 
 		if (bytes)
 		{
@@ -64,7 +73,7 @@ int w_newImageData(lua_State *L)
 			memcpy(t->getData(), bytes, t->getSize());
 		}
 
-		luax_pushtype(L, IMAGE_IMAGE_DATA_ID, t);
+		luax_pushtype(L, t);
 		t->release();
 		return 1;
 	}
@@ -78,7 +87,7 @@ int w_newImageData(lua_State *L)
 			[&](bool) { data->release(); }
 		);
 
-		luax_pushtype(L, IMAGE_IMAGE_DATA_ID, t);
+		luax_pushtype(L, t);
 		t->release();
 		return 1;
 	}
@@ -98,7 +107,7 @@ int w_newCompressedData(lua_State *L)
 		[&](bool) { data->release(); }
 	);
 
-	luax_pushtype(L, IMAGE_COMPRESSED_IMAGE_DATA_ID, t);
+	luax_pushtype(L, CompressedImageData::type, t);
 	t->release();
 	return 1;
 }
@@ -142,7 +151,7 @@ extern "C" int luaopen_love_image(lua_State *L)
 	WrappedModule w;
 	w.module = instance;
 	w.name = "image";
-	w.type = MODULE_IMAGE_ID;
+	w.type = &Image::type;
 	w.functions = functions;
 	w.types = types;
 

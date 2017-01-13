@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -27,7 +27,7 @@ namespace graphics
 
 Texture *luax_checktexture(lua_State *L, int idx)
 {
-	return luax_checktype<Texture>(L, idx, GRAPHICS_TEXTURE_ID);
+	return luax_checktype<Texture>(L, idx);
 }
 
 int w_Texture_getWidth(lua_State *L)
@@ -50,6 +50,35 @@ int w_Texture_getDimensions(lua_State *L)
 	lua_pushnumber(L, t->getWidth());
 	lua_pushnumber(L, t->getHeight());
 	return 2;
+}
+
+int w_Texture_getPixelWidth(lua_State *L)
+{
+	Texture *t = luax_checktexture(L, 1);
+	lua_pushnumber(L, t->getPixelWidth());
+	return 1;
+}
+
+int w_Texture_getPixelHeight(lua_State *L)
+{
+	Texture *t = luax_checktexture(L, 1);
+	lua_pushnumber(L, t->getPixelHeight());
+	return 1;
+}
+
+int w_Texture_getPixelDimensions(lua_State *L)
+{
+	Texture *t = luax_checktexture(L, 1);
+	lua_pushnumber(L, t->getPixelWidth());
+	lua_pushnumber(L, t->getPixelHeight());
+	return 2;
+}
+
+int w_Texture_getPixelDensity(lua_State *L)
+{
+	Texture *t = luax_checktexture(L, 1);
+	lua_pushnumber(L, t->getPixelDensity());
+	return 1;
 }
 
 int w_Texture_setFilter(lua_State *L)
@@ -130,6 +159,10 @@ const luaL_Reg w_Texture_functions[] =
 	{ "getWidth", w_Texture_getWidth },
 	{ "getHeight", w_Texture_getHeight },
 	{ "getDimensions", w_Texture_getDimensions },
+	{ "getPixelWidth", w_Texture_getPixelWidth },
+	{ "getPixelHeight", w_Texture_getPixelHeight },
+	{ "getPixelDimensions", w_Texture_getPixelDimensions },
+	{ "getPixelDensity", w_Texture_getPixelDensity },
 	{ "setFilter", w_Texture_setFilter },
 	{ "getFilter", w_Texture_getFilter },
 	{ "setWrap", w_Texture_setWrap },
@@ -139,7 +172,7 @@ const luaL_Reg w_Texture_functions[] =
 
 extern "C" int luaopen_texture(lua_State *L)
 {
-	return luax_register_type(L, GRAPHICS_TEXTURE_ID, "Texture", w_Texture_functions, nullptr);
+	return luax_register_type(L, &Texture::type, w_Texture_functions, nullptr);
 }
 
 } // graphics

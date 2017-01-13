@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,6 +20,7 @@
 
 #include <limits>
 
+#include "sound/SoundData.h"
 #include "wrap_Source.h"
 
 namespace love
@@ -29,7 +30,7 @@ namespace audio
 
 Source *luax_checksource(lua_State *L, int idx)
 {
-	return luax_checktype<Source>(L, idx, AUDIO_SOURCE_ID);
+	return luax_checktype<Source>(L, idx);
 }
 
 int w_Source_clone(lua_State *L)
@@ -37,7 +38,7 @@ int w_Source_clone(lua_State *L)
 	Source *t = luax_checksource(L, 1);
 	Source *clone = nullptr;
 	luax_catchexcept(L, [&](){ clone = t->clone(); });
-	luax_pushtype(L, AUDIO_SOURCE_ID, clone);
+	luax_pushtype(L, clone);
 	clone->release();
 	return 1;
 }
@@ -60,20 +61,6 @@ int w_Source_pause(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
 	t->pause();
-	return 0;
-}
-
-int w_Source_resume(lua_State *L)
-{
-	Source *t = luax_checksource(L, 1);
-	t->resume();
-	return 0;
-}
-
-int w_Source_rewind(lua_State *L)
-{
-	Source *t = luax_checksource(L, 1);
-	t->rewind();
 	return 0;
 }
 
@@ -257,7 +244,7 @@ int w_Source_isRelative(lua_State *L)
 int w_Source_setLooping(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	t->setLooping(luax_toboolean(L, 2));
+	luax_catchexcept(L, [&](){ t->setLooping(luax_toboolean(L, 2)); });
 	return 0;
 }
 
@@ -268,24 +255,10 @@ int w_Source_isLooping(lua_State *L)
 	return 1;
 }
 
-int w_Source_isStopped(lua_State *L)
-{
-	Source *t = luax_checksource(L, 1);
-	luax_pushboolean(L, t->isStopped());
-	return 1;
-}
-
-int w_Source_isPaused(lua_State *L)
-{
-	Source *t = luax_checksource(L, 1);
-	luax_pushboolean(L, t->isPaused());
-	return 1;
-}
-
 int w_Source_isPlaying(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
-	luax_pushboolean(L, !t->isStopped() && !t->isPaused());
+	luax_pushboolean(L, t->isPlaying());
 	return 1;
 }
 
@@ -357,6 +330,133 @@ int w_Source_getChannels(lua_State *L)
 	return 1;
 }
 
+int w_Source_setFilter(lua_State *L)
+{
+	Source *t = luax_checksource(L, 1);
+
+	Filter::Type type;
+	std::vector<float> params;
+
+	params.reserve(Filter::getParameterCount());
+
+	if (lua_gettop(L) == 1)
+	{
+		lua_pushboolean(L, t->setFilter());
+		return 1;
+	}
+	else if (lua_gettop(L) > 2)
+	{
+		const char *ftypestr = luaL_checkstring(L, 2);
+		if (!Filter::getConstant(ftypestr, type))
+			return luaL_error(L, "Invalid filter type: %s", ftypestr);
+
+		unsigned int count = Filter::getParameterCount(type);
+		for (unsigned int i = 0; i < count; i++)
+			params.push_back(luaL_checknumber(L, i + 3));
+	}
+	else if (lua_istable(L, 2))
+	{
+		if (lua_objlen(L, 2) == 0) //empty table also clears filter
+		{
+			lua_pushboolean(L, t->setFilter());
+			return 1;
+		}
+		lua_rawgeti(L, 2, 1);
+		const char *ftypestr = luaL_checkstring(L, -1);
+		if (!Filter::getConstant(ftypestr, type))
+			return luaL_error(L, "Invalid filter type: %s", ftypestr);
+		lua_pop(L, 1);
+
+		unsigned int count = Filter::getParameterCount(type);
+		for (unsigned int i = 0; i < count; i++)
+		{
+			lua_rawgeti(L, 2, i + 2);
+			params.push_back(luaL_checknumber(L, -1));
+			lua_pop(L, 1);
+		}
+	}
+	else
+		return luax_typerror(L, 2, "filter description");
+
+	luax_catchexcept(L, [&]() { lua_pushboolean(L, t->setFilter(type, params)); });
+	return 1;
+}
+
+int w_Source_getFilter(lua_State *L)
+{
+	Source *t = luax_checksource(L, 1);
+	Filter::Type type;
+	std::vector<float> params;
+	if (!t->getFilter(type, params))
+		return 0;
+
+	const char *str = nullptr;
+	Filter::getConstant(type, str);
+	lua_pushstring(L, str);
+
+	for (unsigned int i = 0; i < params.size(); i++)
+		lua_pushnumber(L, params[i]);
+
+	return params.size() + 1;
+}
+
+int w_Source_getFreeBufferCount(lua_State *L)
+{
+	Source *t = luax_checksource(L, 1);
+	lua_pushinteger(L, t->getFreeBufferCount());
+	return 1;
+}
+
+int w_Source_queue(lua_State *L)
+{
+	Source *t = luax_checksource(L, 1);
+	bool success;
+
+	if (luax_istype(L, 2, love::sound::SoundData::type))
+	{
+		auto s = luax_totype<love::sound::SoundData>(L, 2);
+
+		int offset = 0;
+		size_t length = s->getSize();
+
+		if (lua_gettop(L) == 4)
+		{
+			offset = luaL_checknumber(L, 3);
+			length = luaL_checknumber(L, 4);
+		}
+		else if (lua_gettop(L) == 3)
+			length = luaL_checknumber(L, 3);
+
+		if (offset < 0 || length > s->getSize() - offset)
+			return luaL_error(L, "Data region out of bounds.");
+
+		luax_catchexcept(L, [&]() {
+			success = t->queue((unsigned char *)s->getData() + offset, length,
+			            s->getSampleRate(), s->getBitDepth(), s->getChannels());
+		});
+	}
+	else if (lua_islightuserdata(L, 2))
+	{
+		int offset = luaL_checknumber(L, 3);
+		int length = luaL_checknumber(L, 4);
+		int sampleRate = luaL_checknumber(L, 5);
+		int bitDepth = luaL_checknumber(L, 6);
+		int channels = luaL_checknumber(L, 7);
+
+		if (length < 0 || offset < 0)
+			return luaL_error(L, "Data region out of bounds.");
+
+		luax_catchexcept(L, [&]() {
+			success = t->queue((void*)((uintptr_t)lua_touserdata(L, 2) + (uintptr_t)offset), length, sampleRate, bitDepth, channels);
+		});
+	}
+	else
+		return luax_typerror(L, 1, "Sound Data or lightuserdata");
+
+	luax_pushboolean(L, success);
+	return 1;
+}
+
 int w_Source_getType(lua_State *L)
 {
 	Source *t = luax_checksource(L, 1);
@@ -377,8 +477,6 @@ static const luaL_Reg w_Source_functions[] =
 	{ "play", w_Source_play },
 	{ "stop", w_Source_stop },
 	{ "pause", w_Source_pause },
-	{ "resume", w_Source_resume },
-	{ "rewind", w_Source_rewind },
 
 	{ "setPitch", w_Source_setPitch },
 	{ "getPitch", w_Source_getPitch },
@@ -401,8 +499,6 @@ static const luaL_Reg w_Source_functions[] =
 
 	{ "setLooping", w_Source_setLooping },
 	{ "isLooping", w_Source_isLooping },
-	{ "isStopped", w_Source_isStopped },
-	{ "isPaused", w_Source_isPaused },
 	{ "isPlaying", w_Source_isPlaying },
 
 	{ "setVolumeLimits", w_Source_setVolumeLimits },
@@ -413,6 +509,13 @@ static const luaL_Reg w_Source_functions[] =
 	{ "getRolloff", w_Source_getRolloff},
 
 	{ "getChannels", w_Source_getChannels },
+
+	{ "setFilter", w_Source_setFilter },
+	{ "getFilter", w_Source_getFilter },
+
+	{ "getFreeBufferCount", w_Source_getFreeBufferCount },
+	{ "queue", w_Source_queue },
+
 	{ "getType", w_Source_getType },
 
 	{ 0, 0 }
@@ -420,7 +523,7 @@ static const luaL_Reg w_Source_functions[] =
 
 extern "C" int luaopen_source(lua_State *L)
 {
-	return luax_register_type(L, AUDIO_SOURCE_ID, "Source", w_Source_functions, nullptr);
+	return luax_register_type(L, &love::audio::Source::type, w_Source_functions, nullptr);
 }
 
 } // audio

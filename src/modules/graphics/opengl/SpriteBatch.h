@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -52,11 +52,13 @@ class SpriteBatch : public Drawable
 {
 public:
 
-	SpriteBatch(Texture *texture, int size, Mesh::Usage usage);
+	static love::Type type;
+
+	SpriteBatch(Texture *texture, int size, vertex::Usage usage);
 	virtual ~SpriteBatch();
 
-	int add(float x, float y, float a, float sx, float sy, float ox, float oy, float kx, float ky, int index = -1);
-	int addq(Quad *quad, float x, float y, float a, float sx, float sy, float ox, float oy, float kx, float ky, int index = -1);
+	int add(const Matrix4 &m, int index = -1);
+	int addq(Quad *quad, const Matrix4 &m, int index = -1);
 	void clear();
 
 	void flush();
@@ -91,13 +93,7 @@ public:
 	int getCount() const;
 
 	/**
-	 * Sets the total number of sprites this SpriteBatch can hold.
-	 * Leaves existing sprite data intact when possible.
-	 **/
-	void setBufferSize(int newsize);
-
-	/**
-	 * Get the total number of sprites this SpriteBatch can hold.
+	 * Get the total number of sprites this SpriteBatch can currently hold.
 	 **/
 	int getBufferSize() const;
 
@@ -107,8 +103,12 @@ public:
 	 **/
 	void attachAttribute(const std::string &name, Mesh *mesh);
 
+	void setDrawRange(int start, int count);
+	void setDrawRange();
+	bool getDrawRange(int &start, int &count) const;
+
 	// Implements Drawable.
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	void draw(Graphics *gfx, const Matrix4 &m) override;
 
 private:
 
@@ -118,16 +118,13 @@ private:
 		int index;
 	};
 
-	void addv(const Vertex *v, const Matrix3 &m, int index);
-
 	/**
-	 * Set the color for vertices.
-	 *
-	 * @param v The vertices to set the color for. Must be an array of
-	 *          of size 4.
-	 * @param color The color to assign to each vertex.
-	 */
-	void setColorv(Vertex *v, const Color &color);
+	 * Sets the total number of sprites this SpriteBatch can hold.
+	 * Leaves existing sprite data intact when possible.
+	 **/
+	void setBufferSize(int newsize);
+
+	void addv(const Vertex *v, const Matrix4 &m, int index);
 
 	StrongRef<Texture> texture;
 
@@ -145,6 +142,9 @@ private:
 	QuadIndices quad_indices;
 
 	std::unordered_map<std::string, AttachedAttribute> attached_attributes;
+
+	int range_start;
+	int range_count;
 
 }; // SpriteBatch
 

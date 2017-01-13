@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -22,6 +22,7 @@
 
 // LOVE
 #include "Shader.h"
+#include "graphics/Graphics.h"
 
 namespace love
 {
@@ -30,30 +31,33 @@ namespace graphics
 namespace opengl
 {
 
-Video::Video(love::video::VideoStream *stream)
+love::Type Video::type("Video", &Drawable::type);
+
+Video::Video(love::video::VideoStream *stream, float pixeldensity)
 	: stream(stream)
-	, filter(Texture::getDefaultFilter())
+	, width(stream->getWidth() / pixeldensity)
+	, height(stream->getHeight() / pixeldensity)
+	, filter(Texture::defaultFilter)
 {
 	filter.mipmap = Texture::FILTER_NONE;
 
 	stream->fillBackBuffer();
 
 	for (int i = 0; i < 4; i++)
-		vertices[i].r = vertices[i].g = vertices[i].b = vertices[i].a = 255;
+		vertices[i].color = Color(255, 255, 255, 255);
 
 	// Vertices are ordered for use with triangle strips:
-	// 0----2
-	// |  / |
-	// | /  |
-	// 1----3
+	// 0---2
+	// | / |
+	// 1---3
 	vertices[0].x = 0.0f;
 	vertices[0].y = 0.0f;
 	vertices[1].x = 0.0f;
-	vertices[1].y = (float) stream->getHeight();
-	vertices[2].x = (float) stream->getWidth();
+	vertices[1].y = (float) height;
+	vertices[2].x = (float) width;
 	vertices[2].y = 0.0f;
-	vertices[3].x = (float) stream->getWidth();
-	vertices[3].y = (float) stream->getHeight();
+	vertices[3].x = (float) width;
+	vertices[3].y = (float) height;
 
 	vertices[0].s = 0.0f;
 	vertices[0].t = 0.0f;
@@ -74,7 +78,7 @@ Video::~Video()
 
 bool Video::loadVolatile()
 {
-	glGenTextures(3, &textures[0]);
+	glGenTextures(3, textures);
 
 	// Create the textures using the initial frame data.
 	auto frame = (const love::video::VideoStream::Frame*) stream->getFrontBuffer();
@@ -86,15 +90,18 @@ bool Video::loadVolatile()
 
 	Texture::Wrap wrap; // Clamp wrap mode.
 
+	bool srgb = false;
+	OpenGL::TextureFormat fmt = OpenGL::convertPixelFormat(PIXELFORMAT_R8, false, srgb);
+
 	for (int i = 0; i < 3; i++)
 	{
-		gl.bindTexture(textures[i]);
+		gl.bindTextureToUnit(textures[i], 0, false);
 
 		gl.setTextureFilter(filter);
 		gl.setTextureWrap(wrap);
 
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, widths[i], heights[i], 0,
-		             GL_LUMINANCE, GL_UNSIGNED_BYTE, data[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, fmt.internalformat, widths[i], heights[i],
+		             0, fmt.externalformat, fmt.type, data[i]);
 	}
 
 	return true;
@@ -114,34 +121,46 @@ love::video::VideoStream *Video::getStream()
 	return stream;
 }
 
-void Video::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Video::draw(Graphics *gfx, const Matrix4 &m)
 {
 	update();
 
-	Shader *shader = Shader::current;
-	bool defaultShader = (shader == Shader::defaultShader);
-	if (defaultShader)
+	gfx->flushStreamDraws();
+
+	love::graphics::Shader *shader = Shader::current;
+	bool usingdefaultshader = (shader == Shader::defaultShader);
+	if (usingdefaultshader)
 	{
-		// If we're still using the default shader, substitute the video version
+		// If we're using the default shader, substitute the video version.
 		Shader::defaultVideoShader->attach();
 		shader = Shader::defaultVideoShader;
 	}
 
 	shader->setVideoTextures(textures[0], textures[1], textures[2]);
 
-	OpenGL::TempTransform transform(gl);
-	transform.get() *= Matrix4(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Graphics::StreamDrawRequest req;
+	req.formats[0] = vertex::CommonFormat::XYf_STf_RGBAub;
+	req.indexMode = vertex::TriangleIndexMode::QUADS;
+	req.vertexCount = 4;
 
-	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD);
+	Graphics::StreamVertexData data = gfx->requestStreamDraw(req);
+	Vertex *verts = (Vertex *) data.stream[0];
 
-	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &vertices[0].x);
-	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &vertices[0].s);
+	Matrix4 t(gfx->getTransform(), m);
+	t.transform(verts, vertices, 4);
 
-	gl.prepareDraw();
-	gl.drawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	Color c = toColor(gfx->getColor());
 
-	// If we were using the default shader, reattach it
-	if (defaultShader)
+	for (int i = 0; i < 4; i++)
+	{
+		verts[i].s = vertices[i].s;
+		verts[i].t = vertices[i].t;
+		verts[i].color = c;
+	}
+
+	gfx->flushStreamDraws();
+
+	if (usingdefaultshader)
 		Shader::defaultShader->attach();
 }
 
@@ -159,11 +178,14 @@ void Video::update()
 
 		const unsigned char *data[3] = {frame->yplane, frame->cbplane, frame->crplane};
 
+		bool srgb = false;
+		OpenGL::TextureFormat fmt = OpenGL::convertPixelFormat(PIXELFORMAT_R8, false, srgb);
+
 		for (int i = 0; i < 3; i++)
 		{
-			gl.bindTexture(textures[i]);
+			gl.bindTextureToUnit(textures[i], 0, false);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, widths[i], heights[i],
-			                GL_LUMINANCE, GL_UNSIGNED_BYTE, data[i]);
+			                fmt.externalformat, fmt.type, data[i]);
 		}
 	}
 }
@@ -180,10 +202,20 @@ void Video::setSource(love::audio::Source *source)
 
 int Video::getWidth() const
 {
-	return stream->getWidth();
+	return width;
 }
 
 int Video::getHeight() const
+{
+	return height;
+}
+
+int Video::getPixelWidth() const
+{
+	return stream->getWidth();
+}
+
+int Video::getPixelHeight() const
 {
 	return stream->getHeight();
 }
@@ -197,7 +229,7 @@ void Video::setFilter(const Texture::Filter &f)
 
 	for (int i = 0; i < 3; i++)
 	{
-		gl.bindTexture(textures[i]);
+		gl.bindTextureToUnit(textures[i], 0, false);
 		gl.setTextureFilter(filter);
 	}
 }

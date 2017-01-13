@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -28,6 +28,7 @@
 #include "common/StringMap.h"
 #include "graphics/Drawable.h"
 #include "graphics/Texture.h"
+#include "graphics/vertex.h"
 #include "GLBuffer.h"
 
 // C++
@@ -50,14 +51,7 @@ class Mesh : public Drawable
 {
 public:
 
-	// The expected usage pattern of the Mesh's vertex data.
-	enum Usage
-	{
-		USAGE_STREAM,
-		USAGE_DYNAMIC,
-		USAGE_STATIC,
-		USAGE_MAX_ENUM
-	};
+	static love::Type type;
 
 	// How the Mesh's vertices are used when drawing.
 	// http://escience.anu.edu.au/lecture/cg/surfaceModeling/image/surfaceModeling015.png
@@ -85,11 +79,11 @@ public:
 		int components; // max 4
 	};
 
-	Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size_t datasize, DrawMode drawmode, Usage usage);
-	Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawMode drawmode, Usage usage);
+	Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size_t datasize, DrawMode drawmode, vertex::Usage usage);
+	Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawMode drawmode, vertex::Usage usage);
 
-	Mesh(const std::vector<Vertex> &vertices, DrawMode drawmode, Usage usage);
-	Mesh(int vertexcount, DrawMode drawmode, Usage usage);
+	Mesh(const std::vector<Vertex> &vertices, DrawMode drawmode, vertex::Usage usage);
+	Mesh(int vertexcount, DrawMode drawmode, vertex::Usage usage);
 
 	virtual ~Mesh();
 
@@ -138,7 +132,8 @@ public:
 	 * Attaches a vertex attribute from another Mesh to this one. The attribute
 	 * will be used when drawing this Mesh.
 	 **/
-	void attachAttribute(const std::string &name, Mesh *mesh);
+	void attachAttribute(const std::string &name, Mesh *mesh, const std::string &attachname);
+	bool detachAttribute(const std::string &name);
 
 	void *mapVertexData();
 	void unmapVertexData(size_t modifiedoffset = 0, size_t modifiedsize = -1);
@@ -190,19 +185,14 @@ public:
 	void setDrawMode(DrawMode mode);
 	DrawMode getDrawMode() const;
 
-	void setDrawRange(int min, int max);
+	void setDrawRange(int start, int count);
 	void setDrawRange();
-	void getDrawRange(int &min, int &max) const;
+	bool getDrawRange(int &start, int &count) const;
 
 	int bindAttributeToShaderInput(int attributeindex, const std::string &inputname);
 
 	// Implements Drawable.
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky) override;
-
-	static GLenum getGLBufferUsage(Usage usage);
-
-	static bool getConstant(const char *in, Usage &out);
-	static bool getConstant(Usage in, const char *&out);
+	void draw(Graphics *gfx, const Matrix4 &m) override;
 
 	static bool getConstant(const char *in, DrawMode &out);
 	static bool getConstant(DrawMode in, const char *&out);
@@ -252,13 +242,10 @@ private:
 
 	DrawMode drawMode;
 
-	int rangeMin;
-	int rangeMax;
+	int rangeStart;
+	int rangeCount;
 
 	StrongRef<Texture> texture;
-
-	static StringMap<Usage, USAGE_MAX_ENUM>::Entry usageEntries[];
-	static StringMap<Usage, USAGE_MAX_ENUM> usages;
 
 	static StringMap<DrawMode, DRAWMODE_MAX_ENUM>::Entry drawModeEntries[];
 	static StringMap<DrawMode, DRAWMODE_MAX_ENUM> drawModes;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,8 +24,13 @@
 // LOVE
 #include "common/StringMap.h"
 #include "common/math.h"
+#include "common/pixelformat.h"
 #include "Drawable.h"
 #include "Quad.h"
+#include "vertex.h"
+
+// C
+#include <stddef.h>
 
 namespace love
 {
@@ -39,6 +44,8 @@ namespace graphics
 class Texture : public Drawable
 {
 public:
+
+	static love::Type type;
 
 	enum WrapMode
 	{
@@ -74,24 +81,27 @@ public:
 	Texture();
 	virtual ~Texture();
 
+	static Filter defaultFilter;
+	static FilterMode defaultMipmapFilter;
+	static float defaultMipmapSharpness;
+
+	// Drawable.
+	void draw(Graphics *gfx, const Matrix4 &m) override;
+
 	/**
 	 * Draws the texture using the specified transformation with a Quad applied.
-	 *
-	 * @param quad The Quad object to use to draw the object.
-	 * @param x The position of the object along the x-axis.
-	 * @param y The position of the object along the y-axis.
-	 * @param angle The angle of the object (in radians).
-	 * @param sx The scale factor along the x-axis.
-	 * @param sy The scale factor along the y-axis.
-	 * @param ox The origin offset along the x-axis.
-	 * @param oy The origin offset along the y-axis.
-	 * @param kx Shear along the x-axis.
-	 * @param ky Shear along the y-axis.
 	 **/
-	virtual void drawq(Quad *quad, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky) = 0;
+	void drawq(Graphics *gfx, Quad *quad, const Matrix4 &m);
+
+	PixelFormat getPixelFormat() const;
 
 	virtual int getWidth() const;
 	virtual int getHeight() const;
+
+	virtual int getPixelWidth() const;
+	virtual int getPixelHeight() const;
+
+	float getPixelDensity() const;
 
 	virtual void setFilter(const Filter &f) = 0;
 	virtual const Filter &getFilter() const;
@@ -101,11 +111,7 @@ public:
 
 	virtual const Vertex *getVertices() const;
 
-	virtual const void *getHandle() const = 0;
-
-	// The default filter.
-	static void setDefaultFilter(const Filter &f);
-	static const Filter &getDefaultFilter();
+	virtual ptrdiff_t getHandle() const = 0;
 
 	static bool validateFilter(const Filter &f, bool mipmapsAllowed);
 
@@ -117,8 +123,15 @@ public:
 
 protected:
 
+	virtual void drawv(Graphics *gfx, const Matrix4 &localTransform, const Vertex *v);
+
+	PixelFormat format;
+
 	int width;
 	int height;
+
+	int pixelWidth;
+	int pixelHeight;
 
 	Filter filter;
 	Wrap wrap;
@@ -126,9 +139,6 @@ protected:
 	Vertex vertices[4];
 
 private:
-
-	// The default texture filter.
-	static Filter defaultFilter;
 
 	static StringMap<FilterMode, FILTER_MAX_ENUM>::Entry filterModeEntries[];
 	static StringMap<FilterMode, FILTER_MAX_ENUM> filterModes;

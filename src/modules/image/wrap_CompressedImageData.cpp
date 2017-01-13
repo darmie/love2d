@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -28,7 +28,7 @@ namespace image
 
 CompressedImageData *luax_checkcompressedimagedata(lua_State *L, int idx)
 {
-	return luax_checktype<CompressedImageData>(L, idx, IMAGE_COMPRESSED_IMAGE_DATA_ID);
+	return luax_checktype<CompressedImageData>(L, idx);
 }
 
 int w_CompressedImageData_getWidth(lua_State *L)
@@ -83,10 +83,10 @@ int w_CompressedImageData_getFormat(lua_State *L)
 {
 	CompressedImageData *t = luax_checkcompressedimagedata(L, 1);
 
-	image::CompressedImageData::Format format = t->getFormat();
+	PixelFormat format = t->getFormat();
 	const char *str;
 
-	if (image::CompressedImageData::getConstant(format, str))
+	if (getConstant(format, str))
 		lua_pushstring(L, str);
 	else
 		lua_pushstring(L, "unknown");
@@ -106,7 +106,7 @@ static const luaL_Reg w_CompressedImageData_functions[] =
 
 extern "C" int luaopen_compressedimagedata(lua_State *L)
 {
-	return luax_register_type(L, IMAGE_COMPRESSED_IMAGE_DATA_ID, "CompressedImageData", w_Data_functions, w_CompressedImageData_functions, nullptr);
+	return luax_register_type(L, &CompressedImageData::type, w_Data_functions, w_CompressedImageData_functions, nullptr);
 }
 
 } // image

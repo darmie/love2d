@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,13 +23,13 @@
 
 // LOVE
 #include "common/config.h"
-#include "wrap_Font.h"
+#include "graphics/wrap_Font.h"
 #include "wrap_Image.h"
 #include "graphics/wrap_Quad.h"
 #include "wrap_SpriteBatch.h"
 #include "wrap_ParticleSystem.h"
-#include "wrap_Canvas.h"
-#include "wrap_Shader.h"
+#include "graphics/wrap_Canvas.h"
+#include "graphics/wrap_Shader.h"
 #include "wrap_Mesh.h"
 #include "wrap_Text.h"
 #include "wrap_Video.h"

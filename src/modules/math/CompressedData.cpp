@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -25,6 +25,8 @@ namespace love
 {
 namespace math
 {
+
+love::Type CompressedData::type("CompressedData", &Data::type);
 
 CompressedData::CompressedData(Compressor::Format format, char *cdata, size_t compressedsize, size_t rawsize, bool own)
 	: format(format)

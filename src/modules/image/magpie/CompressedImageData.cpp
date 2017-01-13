@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -48,7 +48,7 @@ CompressedImageData::CompressedImageData(std::list<CompressedFormatHandler *> fo
 	if (data == nullptr)
 		throw love::Exception("Could not parse compressed data.");
 
-	if (format == FORMAT_UNKNOWN)
+	if (format == PIXELFORMAT_UNKNOWN)
 	{
 		delete[] data;
 		throw love::Exception("Could not parse compressed data: Unknown format.");

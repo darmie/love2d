@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -34,13 +34,13 @@ namespace opengl
 
 Video *luax_checkvideo(lua_State *L, int idx)
 {
-	return luax_checktype<Video>(L, idx, GRAPHICS_VIDEO_ID);
+	return luax_checktype<Video>(L, idx);
 }
 
 int w_Video_getStream(lua_State *L)
 {
 	Video *video = luax_checkvideo(L, 1);
-	luax_pushtype(L, VIDEO_VIDEO_STREAM_ID, video->getStream());
+	luax_pushtype(L, video->getStream());
 	return 1;
 }
 
@@ -49,7 +49,7 @@ int w_Video_getSource(lua_State *L)
 	Video *video = luax_checkvideo(L, 1);
 	auto source = video->getSource();
 	if (source)
-		luax_pushtype(L, AUDIO_SOURCE_ID, video->getSource());
+		luax_pushtype(L, video->getSource());
 	else
 		lua_pushnil(L);
 	return 1;
@@ -62,7 +62,7 @@ int w_Video_setSource(lua_State *L)
 		video->setSource(nullptr);
 	else
 	{
-		auto source = luax_checktype<love::audio::Source>(L, 2, AUDIO_SOURCE_ID);
+		auto source = luax_checktype<love::audio::Source>(L, 2);
 		video->setSource(source);
 	}
 	return 0;
@@ -87,6 +87,28 @@ int w_Video_getDimensions(lua_State *L)
 	Video *video = luax_checkvideo(L, 1);
 	lua_pushnumber(L, video->getWidth());
 	lua_pushnumber(L, video->getHeight());
+	return 2;
+}
+
+int w_Video_getPixelWidth(lua_State *L)
+{
+	Video *video = luax_checkvideo(L, 1);
+	lua_pushnumber(L, video->getPixelWidth());
+	return 1;
+}
+
+int w_Video_getPixelHeight(lua_State *L)
+{
+	Video *video = luax_checkvideo(L, 1);
+	lua_pushnumber(L, video->getPixelHeight());
+	return 1;
+}
+
+int w_Video_getPixelDimensions(lua_State *L)
+{
+	Video *video = luax_checkvideo(L, 1);
+	lua_pushnumber(L, video->getPixelWidth());
+	lua_pushnumber(L, video->getPixelHeight());
 	return 2;
 }
 
@@ -136,6 +158,9 @@ static const luaL_Reg functions[] =
 	{ "getWidth", w_Video_getWidth },
 	{ "getHeight", w_Video_getHeight },
 	{ "getDimensions", w_Video_getDimensions },
+	{ "getPixelWidth", w_Video_getPixelWidth },
+	{ "getPixelHeight", w_Video_getPixelHeight },
+	{ "getPixelDimensions", w_Video_getPixelDimensions },
 	{ "setFilter", w_Video_setFilter },
 	{ "getFilter", w_Video_getFilter },
 	{ 0, 0 }
@@ -143,10 +168,10 @@ static const luaL_Reg functions[] =
 
 int luaopen_video(lua_State *L)
 {
-	int ret = luax_register_type(L, GRAPHICS_VIDEO_ID, "Video", functions, nullptr);
+	int ret = luax_register_type(L, &Video::type, functions, nullptr);
 
 	luaL_loadbuffer(L, video_lua, sizeof(video_lua), "Video.lua");
-	luax_gettypemetatable(L, GRAPHICS_VIDEO_ID);
+	luax_gettypemetatable(L, Video::type);
 	lua_call(L, 1, 0);
 
 	return ret;

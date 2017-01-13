@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -27,6 +27,7 @@
 #include "common/Exception.h"
 #include "common/StringMap.h"
 #include "common/int.h"
+#include "common/pixelformat.h"
 
 // stdlib
 #include <string>
@@ -55,14 +56,9 @@ class GlyphData : public Data
 {
 public:
 
-	enum Format
-	{
-		FORMAT_LUMINANCE_ALPHA,
-		FORMAT_RGBA,
-		FORMAT_MAX_ENUM
-	};
+	static love::Type type;
 
-	GlyphData(uint32 glyph, GlyphMetrics glyphMetrics, Format f);
+	GlyphData(uint32 glyph, GlyphMetrics glyphMetrics, PixelFormat f);
 	virtual ~GlyphData();
 
 	// Implements Data.
@@ -137,10 +133,7 @@ public:
 	/**
 	 * Gets the format of the glyph data.
 	 **/
-	Format getFormat() const;
-
-	static bool getConstant(const char *in, Format &out);
-	static bool getConstant(Format in, const char *&out);
+	PixelFormat getFormat() const;
 
 private:
 
@@ -154,10 +147,7 @@ private:
 	uint8 *data;
 
 	// The format the data's in.
-	Format format;
-
-	static StringMap<Format, FORMAT_MAX_ENUM>::Entry formatEntries[];
-	static StringMap<Format, FORMAT_MAX_ENUM> formats;
+	PixelFormat format;
 
 }; // GlyphData
 

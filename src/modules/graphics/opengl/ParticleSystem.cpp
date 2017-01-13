@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,6 +21,7 @@
 //LOVE
 #include "common/config.h"
 #include "ParticleSystem.h"
+#include "graphics/Graphics.h"
 
 #include "OpenGL.h"
 
@@ -38,7 +39,7 @@ namespace opengl
 
 ParticleSystem::ParticleSystem(Texture *texture, uint32 size)
 	: love::graphics::ParticleSystem(texture, size)
-	, particleVerts(nullptr)
+	, buffer(nullptr)
 	, quadIndices(size)
 {
 	createVertices(size);
@@ -46,7 +47,6 @@ ParticleSystem::ParticleSystem(Texture *texture, uint32 size)
 
 ParticleSystem::ParticleSystem(const ParticleSystem &p)
 	: love::graphics::ParticleSystem(p)
-	, particleVerts(nullptr)
 	, quadIndices(p.quadIndices)
 {
 	createVertices(maxParticles);
@@ -54,21 +54,15 @@ ParticleSystem::ParticleSystem(const ParticleSystem &p)
 
 ParticleSystem::~ParticleSystem()
 {
-	delete[] particleVerts;
+	delete buffer;
 }
 
 void ParticleSystem::createVertices(size_t numparticles)
 {
-	try
-	{
-		love::Vertex *pverts = new love::Vertex[numparticles * 4];
-		delete[] particleVerts;
-		particleVerts = pverts;
-	}
-	catch (std::exception &)
-	{
-		throw love::Exception("Out of memory.");
-	}
+	size_t size = sizeof(Vertex) * numparticles * 4;
+	GLBuffer *newbuffer = new GLBuffer(size, nullptr, BUFFER_VERTEX, vertex::USAGE_STREAM, 0);
+	delete buffer;
+	buffer = newbuffer;
 }
 
 ParticleSystem *ParticleSystem::clone()
@@ -84,20 +78,21 @@ void ParticleSystem::setBufferSize(uint32 size)
 	createVertices(size);
 }
 
-void ParticleSystem::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void ParticleSystem::draw(Graphics *gfx, const Matrix4 &m)
 {
 	uint32 pCount = getCount();
 
-	if (pCount == 0 || texture.get() == nullptr || pMem == nullptr || particleVerts == nullptr)
+	if (pCount == 0 || texture.get() == nullptr || pMem == nullptr || buffer == nullptr)
 		return;
+
+	gfx->flushStreamDraws();
 
 	OpenGL::TempDebugGroup debuggroup("ParticleSystem draw");
 
-	OpenGL::TempTransform transform(gl);
-	transform.get() *= Matrix4(x, y, angle, sx, sy, ox, oy, kx, ky);
+	Graphics::TempTransform transform(gfx, m);
 
 	const Vertex *textureVerts = texture->getVertices();
-	Vertex *pVerts = particleVerts;
+	Vertex *pVerts = (Vertex *) buffer->map();
 	Particle *p = pHead;
 
 	bool useQuads = !quads.empty();
@@ -114,41 +109,39 @@ void ParticleSystem::draw(float x, float y, float angle, float sx, float sy, flo
 		t.setTransformation(p->position.x, p->position.y, p->angle, p->size, p->size, offset.x, offset.y, 0.0f, 0.0f);
 		t.transform(pVerts, textureVerts, 4);
 
+		// Particle colors are stored as floats (0-1) but vertex colors are
+		// unsigned bytes (0-255).
+		Color c = toColor(p->color);
+
 		// set the texture coordinate and color data for particle vertices
 		for (int v = 0; v < 4; v++)
 		{
 			pVerts[v].s = textureVerts[v].s;
 			pVerts[v].t = textureVerts[v].t;
-
-			// Particle colors are stored as floats (0-1) but vertex colors are
-			// unsigned bytes (0-255).
-			pVerts[v].r = (unsigned char) (p->color.r*255);
-			pVerts[v].g = (unsigned char) (p->color.g*255);
-			pVerts[v].b = (unsigned char) (p->color.b*255);
-			pVerts[v].a = (unsigned char) (p->color.a*255);
+			pVerts[v].color = c;
 		}
 
 		pVerts += 4;
 		p = p->next;
 	}
 
-	gl.bindTexture(*(GLuint *) texture->getHandle());
+	buffer->unmap();
+
+	gl.bindTextureToUnit(texture, 0, false);
 	gl.prepareDraw();
 
 	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD | ATTRIBFLAG_COLOR);
 
-	glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), &particleVerts[0].r);
-	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &particleVerts[0].x);
-	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &particleVerts[0].s);
+	buffer->bind();
+	glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), BUFFER_OFFSET(offsetof(Vertex, color.r)));
+	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), BUFFER_OFFSET(offsetof(Vertex, x)));
+	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), BUFFER_OFFSET(offsetof(Vertex, s)));
 
 	GLsizei count = (GLsizei) quadIndices.getIndexCount(pCount);
 	GLenum gltype = quadIndices.getType();
 
-	// We use a client-side index array instead of an Index Buffers, because
-	// at least one graphics driver (the one for Kepler nvidia GPUs in OS X
-	// 10.11) fails to render geometry if an index buffer is used with
-	// client-side vertex arrays.
-	gl.drawElements(GL_TRIANGLES, count, gltype, quadIndices.getIndices(0));
+	quadIndices.getBuffer()->bind();
+	gl.drawElements(GL_TRIANGLES, count, gltype, quadIndices.getPointer(0));
 }
 
 } // opengl

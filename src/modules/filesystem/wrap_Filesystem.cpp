@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -113,9 +113,9 @@ int w_mount(lua_State *L)
 {
 	std::string archive;
 
-	if (luax_istype(L, 1, FILESYSTEM_DROPPED_FILE_ID))
+	if (luax_istype(L, 1, DroppedFile::type))
 	{
-		DroppedFile *file = luax_totype<DroppedFile>(L, 1, FILESYSTEM_DROPPED_FILE_ID);
+		DroppedFile *file = luax_totype<DroppedFile>(L, 1);
 		archive = file->getFilename();
 	}
 	else
@@ -166,7 +166,7 @@ int w_newFile(lua_State *L)
 		}
 	}
 
-	luax_pushtype(L, FILESYSTEM_FILE_ID, t);
+	luax_pushtype(L, t);
 	t->release();
 	return 1;
 }
@@ -190,12 +190,12 @@ FileData *luax_getfiledata(lua_State *L, int idx)
 	FileData *data = nullptr;
 	File *file = nullptr;
 
-	if (lua_isstring(L, idx) || luax_istype(L, idx, FILESYSTEM_FILE_ID))
+	if (lua_isstring(L, idx) || luax_istype(L, idx, File::type))
 	{
 		file = luax_getfile(L, idx);
 		file->retain();
 	}
-	else if (luax_istype(L, idx, FILESYSTEM_FILE_DATA_ID))
+	else if (luax_istype(L, idx, FileData::type))
 	{
 		data = luax_checkfiledata(L, idx);
 		data->retain();
@@ -220,7 +220,7 @@ FileData *luax_getfiledata(lua_State *L, int idx)
 
 bool luax_cangetfiledata(lua_State *L, int idx)
 {
-	return lua_isstring(L, idx) || luax_istype(L, idx, FILESYSTEM_FILE_ID) || luax_istype(L, idx, FILESYSTEM_FILE_DATA_ID);
+	return lua_isstring(L, idx) || luax_istype(L, idx, File::type) || luax_istype(L, idx, FileData::type);
 }
 
 int w_newFileData(lua_State *L)
@@ -233,7 +233,7 @@ int w_newFileData(lua_State *L)
 			luax_convobj(L, 1, "filesystem", "newFile");
 
 		// Get FileData from the File.
-		if (luax_istype(L, 1, FILESYSTEM_FILE_ID))
+		if (luax_istype(L, 1, File::type))
 		{
 			File *file = luax_checkfile(L, 1);
 
@@ -246,7 +246,7 @@ int w_newFileData(lua_State *L)
 			{
 				return luax_ioError(L, "%s", e.what());
 			}
-			luax_pushtype(L, FILESYSTEM_FILE_DATA_ID, data);
+			luax_pushtype(L, data);
 			return 1;
 		}
 		else
@@ -256,28 +256,11 @@ int w_newFileData(lua_State *L)
 	size_t length = 0;
 	const char *str = luaL_checklstring(L, 1, &length);
 	const char *filename = luaL_checkstring(L, 2);
-	const char *decstr = lua_isstring(L, 3) ? lua_tostring(L, 3) : 0;
 
-	FileData::Decoder decoder = FileData::FILE;
+	FileData *t = nullptr;
+	luax_catchexcept(L, [&](){ t = instance()->newFileData(str, length, filename); });
 
-	if (decstr && !FileData::getConstant(decstr, decoder))
-		return luaL_error(L, "Invalid FileData decoder: %s", decstr);
-
-	FileData *t = 0;
-
-	switch (decoder)
-	{
-	case FileData::FILE:
-		t = instance()->newFileData((void *)str, (int)length, filename);
-		break;
-	case FileData::BASE64:
-		t = instance()->newFileData(str, filename);
-		break;
-	default:
-		return luaL_error(L, "Invalid FileData decoder: %s", decstr);
-	}
-
-	luax_pushtype(L, FILESYSTEM_FILE_DATA_ID, t);
+	luax_pushtype(L, t);
 	t->release();
 	return 1;
 }
@@ -415,9 +398,9 @@ static int w_write_or_append(lua_State *L, File::Mode mode)
 	const char *input = 0;
 	size_t len = 0;
 
-	if (luax_istype(L, 2, DATA_ID))
+	if (luax_istype(L, 2, love::Data::type))
 	{
-		love::Data *data = luax_totype<love::Data>(L, 2, DATA_ID);
+		love::Data *data = luax_totype<love::Data>(L, 2);
 		input = (const char *) data->getData();
 		len = data->getSize();
 	}
@@ -491,7 +474,7 @@ int w_lines(lua_State *L)
 			return luaL_error(L, "Could not open file.");
 		}
 
-		luax_pushtype(L, FILESYSTEM_FILE_ID, file);
+		luax_pushtype(L, file);
 		file->release();
 	}
 	else
@@ -603,10 +586,43 @@ int w_getRequirePath(lua_State *L)
 	return 1;
 }
 
+int w_getCRequirePath(lua_State *L)
+{
+	std::stringstream path;
+	bool seperator = false;
+	for (auto &element : instance()->getCRequirePath())
+	{
+		if (seperator)
+			path << ";";
+		else
+			seperator = true;
+
+		path << element;
+	}
+
+	luax_pushstring(L, path.str());
+	return 1;
+}
+
 int w_setRequirePath(lua_State *L)
 {
 	std::string element = luax_checkstring(L, 1);
 	auto &requirePath = instance()->getRequirePath();
+
+	requirePath.clear();
+	std::stringstream path;
+	path << element;
+
+	while(std::getline(path, element, ';'))
+		requirePath.push_back(element);
+
+	return 0;
+}
+
+int w_setCRequirePath(lua_State *L)
+{
+	std::string element = luax_checkstring(L, 1);
+	auto &requirePath = instance()->getCRequirePath();
 
 	requirePath.clear();
 	std::stringstream path;
@@ -664,6 +680,9 @@ int extloader(lua_State *L)
 	std::string tokenized_name(filename);
 	std::string tokenized_function(filename);
 
+	// We need both the tokenized filename (dots replaced with slashes)
+	// and the tokenized function name (dots replaced with underscores)
+	// NOTE: Lua's loader queries more names than this one.
 	for (unsigned int i = 0; i < tokenized_name.size(); i++)
 	{
 		if (tokenized_name[i] == '.')
@@ -673,32 +692,29 @@ int extloader(lua_State *L)
 		}
 	}
 
-	tokenized_name += library_extension();
-
 	void *handle = nullptr;
-
-	// If the game is fused, try looking for the DLL in the game's read paths.
-	if (instance()->isFused())
+	auto *inst = instance();
+	for (std::string element : inst->getCRequirePath())
 	{
-		try
-		{
-			std::string dir = instance()->getRealDirectory(tokenized_name.c_str());
+		// Replace ?? with the filename and extension
+		size_t pos = element.find("??");
+		if (pos != std::string::npos)
+			element.replace(pos, 2, tokenized_name + library_extension());
+		// Or ? with just the filename
+		pos = element.find('?');
+		if (pos != std::string::npos)
+			element.replace(pos, 1, tokenized_name);
 
-			// We don't want to look in the game's source, because it can be a
-			// zip sometimes and a folder other times.
-			if (dir.find(instance()->getSource()) == std::string::npos)
-				handle = SDL_LoadObject((dir + LOVE_PATH_SEPARATOR + tokenized_name).c_str());
-		}
-		catch (love::Exception &)
-		{
-			// Nothing...
-		}
-	}
+		if (!inst->isFile(element.c_str()))
+			continue;
 
-	if (!handle)
-	{
-		std::string path = std::string(instance()->getAppdataDirectory()) + LOVE_PATH_SEPARATOR LOVE_APPDATA_FOLDER LOVE_PATH_SEPARATOR + tokenized_name;
-		handle = SDL_LoadObject(path.c_str());
+		// Now resolve the full path, as we're bypassing physfs for the next part.
+		element = inst->getRealDirectory(element.c_str()) + LOVE_PATH_SEPARATOR + element;
+
+		handle = SDL_LoadObject(element.c_str());
+		// Can fail, for instance if it turned out the source was a zip
+		if (handle)
+			break;
 	}
 
 	if (!handle)
@@ -707,6 +723,8 @@ int extloader(lua_State *L)
 		return 1;
 	}
 
+	// We look for both loveopen_ and luaopen_, so libraries with specific love support
+	// can tell when they've been loaded by love.
 	void *func = SDL_LoadFunction(handle, ("loveopen_" + tokenized_function).c_str());
 	if (!func)
 		func = SDL_LoadFunction(handle, ("luaopen_" + tokenized_function).c_str());
@@ -762,6 +780,8 @@ static const luaL_Reg functions[] =
 	{ "newFileData", w_newFileData },
 	{ "getRequirePath", w_getRequirePath },
 	{ "setRequirePath", w_setRequirePath },
+	{ "getCRequirePath", w_getCRequirePath },
+	{ "setCRequirePath", w_setCRequirePath },
 	{ 0, 0 }
 };
 
@@ -790,7 +810,7 @@ extern "C" int luaopen_love_filesystem(lua_State *L)
 	WrappedModule w;
 	w.module = instance;
 	w.name = "filesystem";
-	w.type = MODULE_FILESYSTEM_ID;
+	w.type = &Filesystem::type;
 	w.functions = functions;
 	w.types = types;
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -27,8 +27,13 @@ namespace love
 namespace image
 {
 
+love::Type ImageData::type("ImageData", &Data::type);
+
 ImageData::ImageData()
-	: data(nullptr)
+	: format(PIXELFORMAT_UNKNOWN)
+	, width(0)
+	, height(0)
+	, data(nullptr)
 {
 }
 
@@ -38,7 +43,7 @@ ImageData::~ImageData()
 
 size_t ImageData::getSize() const
 {
-	return size_t(getWidth()*getHeight())*sizeof(pixel);
+	return size_t(getWidth() * getHeight()) * getPixelSize();
 }
 
 void *ImageData::getData() const
@@ -51,6 +56,11 @@ bool ImageData::inside(int x, int y) const
 	return x >= 0 && x < getWidth() && y >= 0 && y < getHeight();
 }
 
+PixelFormat ImageData::getFormat() const
+{
+	return format;
+}
+
 int ImageData::getWidth() const
 {
 	return width;
@@ -61,47 +71,41 @@ int ImageData::getHeight() const
 	return height;
 }
 
-void ImageData::setPixel(int x, int y, pixel c)
+void ImageData::setPixel(int x, int y, const Pixel &p)
 {
 	if (!inside(x, y))
 		throw love::Exception("Attempt to set out-of-range pixel!");
 
+	size_t pixelsize = getPixelSize();
+	unsigned char *pixeldata = data + ((y * width + x) * pixelsize);
+
 	Lock lock(mutex);
-
-	pixel *pixels = (pixel *) getData();
-	pixels[y*width+x] = c;
+	memcpy(pixeldata, &p, pixelsize);
 }
 
-void ImageData::setPixelUnsafe(int x, int y, pixel c)
-{
-	pixel *pixels = (pixel *) getData();
-	pixels[y*width+x] = c;
-}
-
-pixel ImageData::getPixel(int x, int y) const
+void ImageData::getPixel(int x, int y, Pixel &p) const
 {
 	if (!inside(x, y))
 		throw love::Exception("Attempt to get out-of-range pixel!");
 
+	size_t pixelsize = getPixelSize();
+
 	Lock lock(mutex);
-
-	const pixel *pixels = (const pixel *) getData();
-	return pixels[y*width+x];
-}
-
-pixel ImageData::getPixelUnsafe(int x, int y) const
-{
-	const pixel *pixels = (const pixel *) getData();
-	return pixels[y*width+x];
+	memcpy(&p, data + ((y * width + x) * pixelsize), pixelsize);
 }
 
 void ImageData::paste(ImageData *src, int dx, int dy, int sx, int sy, int sw, int sh)
 {
+	if (getFormat() != src->getFormat())
+		throw love::Exception("ImageData formats must match!");
+
 	Lock lock2(src->mutex);
 	Lock lock1(mutex);
 
-	pixel *s = (pixel *)src->getData();
-	pixel *d = (pixel *)getData();
+	uint8 *s = (uint8 *) src->getData();
+	uint8 *d = (uint8 *) getData();
+
+	size_t pixelsize = getPixelSize();
 
 	// Check bounds; if the data ends up completely out of bounds, get out early.
 	if (sx >= src->getWidth() || sx + sw < 0 || sy >= src->getHeight() || sy + sh < 0
@@ -150,19 +154,42 @@ void ImageData::paste(ImageData *src, int dx, int dy, int sx, int sy, int sw, in
 	if (sw == getWidth() && getWidth() == src->getWidth()
 		&& sh == getHeight() && getHeight() == src->getHeight())
 	{
-		memcpy(d, s, sizeof(pixel) * sw * sh);
+		memcpy(d, s, pixelsize * sw * sh);
 	}
 	else if (sw > 0)
 	{
 		// Otherwise, copy each row individually.
 		for (int i = 0; i < sh; i++)
-			memcpy(d + dx + (i + dy) * getWidth(), s + sx + (i + sy) * src->getWidth(), sizeof(pixel) * sw);
+		{
+			const uint8 *rowsrc = s + (sx + (i + sy) * src->getWidth()) * pixelsize;
+			uint8 *rowdst = d + (dx + (i + dy) * getWidth()) * pixelsize;
+			memcpy(rowdst, rowsrc, pixelsize * sw);
+		}
 	}
 }
 
 love::thread::Mutex *ImageData::getMutex() const
 {
 	return mutex;
+}
+
+size_t ImageData::getPixelSize() const
+{
+	return getPixelFormatSize(format);
+}
+
+bool ImageData::validPixelFormat(PixelFormat format)
+{
+	switch (format)
+	{
+	case PIXELFORMAT_RGBA8:
+	case PIXELFORMAT_RGBA16:
+	case PIXELFORMAT_RGBA16F:
+	case PIXELFORMAT_RGBA32F:
+		return true;
+	default:
+		return false;
+	}
 }
 
 bool ImageData::getConstant(const char *in, EncodedFormat &out)

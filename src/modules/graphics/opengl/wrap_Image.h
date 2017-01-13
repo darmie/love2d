@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -33,6 +33,7 @@ namespace graphics
 namespace opengl
 {
 
+const char *luax_imageSettingName(Image::SettingType settingtype);
 Image *luax_checkimage(lua_State *L, int idx);
 extern "C" int luaopen_image(lua_State *L);
 

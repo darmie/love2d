@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,12 +24,14 @@
 // STD
 #include <queue>
 #include <map>
+#include <vector>
 #include <cmath>
 
 // LOVE
 #include "common/config.h"
 #include "common/Exception.h"
 #include "thread/threads.h"
+#include "audio/Source.h"
 
 // OpenAL
 #ifdef LOVE_APPLE_USE_FRAMEWORKS
@@ -81,19 +83,19 @@ public:
 	int getSourceCount() const;
 	int getMaxSources() const;
 
-	bool play(Source *source, ALuint &out);
+	bool play(Source *source);
 	void stop();
 	void stop(Source *source);
-	void pause();
+	std::vector<love::audio::Source*> pause();
 	void pause(Source *source);
-	void resume();
-	void resume(Source *source);
-	void rewind();
-	void rewind(Source *source);
-	void softRewind(Source *source);
 	void seek(Source *source, float offset, void *unit);
 	float tell(Source *source, void *unit);
 	double getDuration(Source *source, void *unit);
+	bool queue(Source *source, void *data, ALsizei length);
+
+	bool play(const std::vector<love::audio::Source*> &sources);
+	void stop(const std::vector<love::audio::Source*> &sources);
+	void pause(const std::vector<love::audio::Source*> &sources);
 
 private:
 
@@ -105,6 +107,7 @@ private:
 
 	ALuint findi(const Source *source) const;
 
+	bool assignSource(Source *source, ALuint &out, char *wasPlaying = nullptr);
 	bool findSource(Source *source, ALuint &out);
 	bool removeSource(Source *source);
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -82,6 +82,8 @@ namespace love
 {
 namespace math
 {
+
+love::Type BezierCurve::type("BezierCurve", &Object::type);
 
 BezierCurve::BezierCurve(const vector<Vector> &pts)
 	: controlPoints(pts)
@@ -233,7 +235,7 @@ vector<Vector> BezierCurve::render(int accuracy) const
 	return vertices;
 }
 
-vector<Vector> BezierCurve::renderSegment(double start, double end, size_t accuracy) const
+vector<Vector> BezierCurve::renderSegment(double start, double end, int accuracy) const
 {
 	if (controlPoints.size() < 2)
 		throw Exception("Invalid Bezier curve: Not enough control points.");

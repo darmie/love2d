@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -52,8 +52,8 @@ public:
 	const char *getName() const;
 
 	love::image::ImageData *newImageData(love::filesystem::FileData *data);
-	love::image::ImageData *newImageData(int width, int height);
-	love::image::ImageData *newImageData(int width, int height, void *data, bool own = false);
+	love::image::ImageData *newImageData(int width, int height, PixelFormat format = PIXELFORMAT_RGBA8);
+	love::image::ImageData *newImageData(int width, int height, PixelFormat format, void *data, bool own = false);
 
 	love::image::CompressedImageData *newCompressedData(love::filesystem::FileData *data);
 

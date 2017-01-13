@@ -3,7 +3,7 @@ R"luastring"--(
 -- There is a matching delimiter at the bottom of the file.
 
 --[[
-Copyright (c) 2006-2016 LOVE Development Team
+Copyright (c) 2006-2017 LOVE Development Team
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
@@ -72,6 +72,8 @@ local ffifuncs = ffi.cast("FFI_RandomGenerator *", ffifuncspointer)
 -- Overwrite some regular love.math functions with FFI implementations.
 
 function RandomGenerator:random(l, u)
+	-- TODO: This should ideally be handled inside ffifuncs.random
+	if self == nil then error("bad argument #1 to 'random' (RandomGenerator expected, got no value)", 2) end
 	local r = tonumber(ffifuncs.random(self))
 	return getrandom(r, l, u)
 end

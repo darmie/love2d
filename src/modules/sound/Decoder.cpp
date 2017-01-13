@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -18,31 +18,53 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_TIMER_SDL_TIMER_H
-#define LOVE_TIMER_SDL_TIMER_H
+#include "Decoder.h"
 
-// LOVE
-#include "timer/Timer.h"
+#include "common/Exception.h"
 
 namespace love
 {
-namespace timer
-{
-namespace sdl
+namespace sound
 {
 
-class Timer : public love::timer::Timer
+love::Type Decoder::type("Decoder", &Object::type);
+
+Decoder::Decoder(Data *data, const std::string &ext, int bufferSize)
+	: data(data)
+	, ext(ext)
+	, bufferSize(bufferSize)
+	, sampleRate(DEFAULT_SAMPLE_RATE)
+	, buffer(0)
+	, eof(false)
 {
-public:
+	buffer = new char[bufferSize];
+}
 
-	Timer();
-	virtual ~Timer();
-	const char *getName() const override;
+Decoder::~Decoder()
+{
+	if (buffer != 0)
+		delete [](char *) buffer;
+}
 
-}; // Timer
+void *Decoder::getBuffer() const
+{
+	return buffer;
+}
 
-} // sdl
-} // timer
+int Decoder::getSize() const
+{
+	return bufferSize;
+}
+
+int Decoder::getSampleRate() const
+{
+	return sampleRate;
+}
+
+bool Decoder::isFinished()
+{
+	return eof;
+}
+
+} // sound
 } // love
-
-#endif // LOVE_TIMER_SDL_TIMER_H

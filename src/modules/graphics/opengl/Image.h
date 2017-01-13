@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -52,17 +52,21 @@ class Image : public Texture, public Volatile
 {
 public:
 
-	enum FlagType
+	static love::Type type;
+
+	enum SettingType
 	{
-		FLAG_TYPE_MIPMAPS,
-		FLAG_TYPE_LINEAR,
-		FLAG_TYPE_MAX_ENUM
+		SETTING_MIPMAPS,
+		SETTING_LINEAR,
+		SETTING_PIXELDENSITY,
+		SETTING_MAX_ENUM
 	};
 
-	struct Flags
+	struct Settings
 	{
 		bool mipmaps = false;
 		bool linear = false;
+		float pixeldensity = 1.0f;
 	};
 
 	/**
@@ -73,38 +77,28 @@ public:
 	 * array is a mipmap level. If more than the base level is present, all
 	 * mip levels must be present.
 	 **/
-	Image(const std::vector<love::image::ImageData *> &data, const Flags &flags);
+	Image(const std::vector<love::image::ImageData *> &data, const Settings &settings);
 
 	/**
 	 * Creates a new Image with compressed image data.
 	 *
 	 * @param cdata The compressed data from which to load the image.
 	 **/
-	Image(const std::vector<love::image::CompressedImageData *> &cdata, const Flags &flags);
+	Image(const std::vector<love::image::CompressedImageData *> &cdata, const Settings &settings);
 
 	virtual ~Image();
 
 	// Implements Volatile.
-	bool loadVolatile();
-	void unloadVolatile();
+	bool loadVolatile() override;
+	void unloadVolatile() override;
 
-	/**
-	 * @copydoc Drawable::draw()
-	 **/
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
-
-	/**
-	 * @copydoc Texture::drawq()
-	 **/
-	void drawq(Quad *quad, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
-
-	virtual const void *getHandle() const;
+	ptrdiff_t getHandle() const override;
 
 	const std::vector<StrongRef<love::image::ImageData>> &getImageData() const;
 	const std::vector<StrongRef<love::image::CompressedImageData>> &getCompressedData() const;
 
-	virtual void setFilter(const Texture::Filter &f);
-	virtual bool setWrap(const Texture::Wrap &w);
+	void setFilter(const Texture::Filter &f) override;
+	bool setWrap(const Texture::Wrap &w) override;
 
 	void setMipmapSharpness(float sharpness);
 	float getMipmapSharpness() const;
@@ -120,25 +114,17 @@ public:
 	 **/
 	bool refresh(int xoffset, int yoffset, int w, int h);
 
-	const Flags &getFlags() const;
+	const Settings &getFlags() const;
 
-	static void setDefaultMipmapSharpness(float sharpness);
-	static float getDefaultMipmapSharpness();
-	static void setDefaultMipmapFilter(FilterMode f);
-	static FilterMode getDefaultMipmapFilter();
-
-	static bool hasAnisotropicFilteringSupport();
-	static bool hasCompressedTextureSupport(image::CompressedImageData::Format format, bool sRGB);
+	static bool isFormatSupported(PixelFormat pixelformat);
 	static bool hasSRGBSupport();
 
-	static bool getConstant(const char *in, FlagType &out);
-	static bool getConstant(FlagType in, const char *&out);
+	static bool getConstant(const char *in, SettingType &out);
+	static bool getConstant(SettingType in, const char *&out);
 
 	static int imageCount;
 
 private:
-
-	void drawv(const Matrix4 &t, const Vertex *v);
 
 	void preload();
 
@@ -146,8 +132,6 @@ private:
 	void loadDefaultTexture();
 	void loadFromCompressedData();
 	void loadFromImageData();
-
-	GLenum getCompressedFormat(image::CompressedImageData::Format cformat, bool &isSRGB) const;
 
 	// The ImageData from which the texture is created. May be empty if
 	// Compressed image data was used to create the texture.
@@ -167,8 +151,8 @@ private:
 	// Whether this Image is using a compressed texture.
 	bool compressed;
 
-	// The flags used to initialize this Image.
-	Flags flags;
+	// The settings used to initialize this Image.
+	Settings settings;
 
 	bool sRGB;
 
@@ -180,11 +164,8 @@ private:
 
 	static float maxMipmapSharpness;
 
-	static FilterMode defaultMipmapFilter;
-	static float defaultMipmapSharpness;
-
-	static StringMap<FlagType, FLAG_TYPE_MAX_ENUM>::Entry flagNameEntries[];
-	static StringMap<FlagType, FLAG_TYPE_MAX_ENUM> flagNames;
+	static StringMap<SettingType, SETTING_MAX_ENUM>::Entry settingTypeEntries[];
+	static StringMap<SettingType, SETTING_MAX_ENUM> settingTypes;
 
 }; // Image
 

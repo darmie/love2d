@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -37,7 +37,7 @@ namespace opengl
 
 Mesh *luax_checkmesh(lua_State *L, int idx)
 {
-	return luax_checktype<Mesh>(L, idx, GRAPHICS_MESH_ID);
+	return luax_checktype<Mesh>(L, idx);
 }
 
 static inline size_t writeByteData(lua_State *L, int startidx, int components, char *data)
@@ -45,7 +45,7 @@ static inline size_t writeByteData(lua_State *L, int startidx, int components, c
 	uint8 *componentdata = (uint8 *) data;
 
 	for (int i = 0; i < components; i++)
-		componentdata[i] = (uint8) luaL_optnumber(L, startidx + i, 255);
+		componentdata[i] = (uint8) (luaL_optnumber(L, startidx + i, 1.0) * 255.0);
 
 	return sizeof(uint8) * components;
 }
@@ -78,7 +78,7 @@ static inline size_t readByteData(lua_State *L, int components, const char *data
 	const uint8 *componentdata = (const uint8 *) data;
 
 	for (int i = 0; i < components; i++)
-		lua_pushnumber(L, (lua_Number) componentdata[i]);
+		lua_pushnumber(L, (lua_Number) componentdata[i] / 255.0);
 
 	return sizeof(uint8) * components;
 }
@@ -117,9 +117,9 @@ int w_Mesh_setVertices(lua_State *L)
 	size_t stride = t->getVertexStride();
 	size_t byteoffset = vertoffset * stride;
 
-	if (luax_istype(L, 2, DATA_ID))
+	if (luax_istype(L, 2, Data::type))
 	{
-		Data *d = luax_checktype<Data>(L, 2, DATA_ID);
+		Data *d = luax_checktype<Data>(L, 2);
 
 		size_t datasize = std::min(d->getSize(), (t->getVertexCount() - vertoffset) * stride);
 		char *bytedata = (char *) t->mapVertexData() + byteoffset;
@@ -131,7 +131,7 @@ int w_Mesh_setVertices(lua_State *L)
 	}
 
 	luaL_checktype(L, 2, LUA_TTABLE);
-	size_t nvertices = luax_objlen(L, 2);
+	int nvertices = (int) luax_objlen(L, 2);
 
 	if (vertoffset + nvertices > t->getVertexCount())
 		return luaL_error(L, "Too many vertices (expected at most %d, got %d)", (int) t->getVertexCount() - (int) vertoffset, (int) nvertices);
@@ -144,7 +144,7 @@ int w_Mesh_setVertices(lua_State *L)
 
 	char *data = (char *) t->mapVertexData() + byteoffset;
 
-	for (size_t i = 0; i < nvertices; i++)
+	for (int i = 0; i < nvertices; i++)
 	{
 		// get vertices[vertindex]
 		lua_rawgeti(L, 2, i + 1);
@@ -338,8 +338,19 @@ int w_Mesh_attachAttribute(lua_State *L)
 	Mesh *t = luax_checkmesh(L, 1);
 	const char *name = luaL_checkstring(L, 2);
 	Mesh *mesh = luax_checkmesh(L, 3);
-	luax_catchexcept(L, [&](){ t->attachAttribute(name, mesh); });
+	const char *attachname = luaL_optstring(L, 4, name);
+	luax_catchexcept(L, [&](){ t->attachAttribute(name, mesh, attachname); });
 	return 0;
+}
+
+int w_Mesh_detachAttribute(lua_State *L)
+{
+	Mesh *t = luax_checkmesh(L, 1);
+	const char *name = luaL_checkstring(L, 2);
+	bool success = false;
+	luax_catchexcept(L, [&](){ success = t->detachAttribute(name); });
+	luax_pushboolean(L, success);
+	return 1;
 }
 
 int w_Mesh_flush(lua_State *L)
@@ -437,9 +448,9 @@ int w_Mesh_getTexture(lua_State *L)
 
 	// FIXME: big hack right here.
 	if (typeid(*tex) == typeid(Image))
-		luax_pushtype(L, GRAPHICS_IMAGE_ID, tex);
+		luax_pushtype(L, Image::type, tex);
 	else if (typeid(*tex) == typeid(Canvas))
-		luax_pushtype(L, GRAPHICS_CANVAS_ID, tex);
+		luax_pushtype(L, Canvas::type, tex);
 	else
 		return luaL_error(L, "Unable to determine texture type.");
 
@@ -480,9 +491,9 @@ int w_Mesh_setDrawRange(lua_State *L)
 		t->setDrawRange();
 	else
 	{
-		int rangemin = (int) luaL_checknumber(L, 2) - 1;
-		int rangemax = (int) luaL_checknumber(L, 3) - 1;
-		luax_catchexcept(L, [&](){ t->setDrawRange(rangemin, rangemax); });
+		int start = (int) luaL_checknumber(L, 2) - 1;
+		int count = (int) luaL_checknumber(L, 3);
+		luax_catchexcept(L, [&](){ t->setDrawRange(start, count); });
 	}
 
 	return 0;
@@ -492,15 +503,13 @@ int w_Mesh_getDrawRange(lua_State *L)
 {
 	Mesh *t = luax_checkmesh(L, 1);
 
-	int rangemin = -1;
-	int rangemax = -1;
-	t->getDrawRange(rangemin, rangemax);
-
-	if (rangemin < 0 || rangemax < 0)
+	int start = 0;
+	int count = 1;
+	if (!t->getDrawRange(start, count))
 		return 0;
 
-	lua_pushinteger(L, rangemin + 1);
-	lua_pushinteger(L, rangemax + 1);
+	lua_pushinteger(L, start + 1);
+	lua_pushinteger(L, count);
 	return 2;
 }
 
@@ -516,6 +525,7 @@ static const luaL_Reg w_Mesh_functions[] =
 	{ "setAttributeEnabled", w_Mesh_setAttributeEnabled },
 	{ "isAttributeEnabled", w_Mesh_isAttributeEnabled },
 	{ "attachAttribute", w_Mesh_attachAttribute },
+	{ "detachAttribute", w_Mesh_detachAttribute },
 	{ "flush", w_Mesh_flush },
 	{ "setVertexMap", w_Mesh_setVertexMap },
 	{ "getVertexMap", w_Mesh_getVertexMap },
@@ -530,7 +540,7 @@ static const luaL_Reg w_Mesh_functions[] =
 
 extern "C" int luaopen_mesh(lua_State *L)
 {
-	return luax_register_type(L, GRAPHICS_MESH_ID, "Mesh", w_Mesh_functions, nullptr);
+	return luax_register_type(L, &Mesh::type, w_Mesh_functions, nullptr);
 }
 
 } // opengl

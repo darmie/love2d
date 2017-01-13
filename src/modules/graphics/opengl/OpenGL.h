@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,8 +24,10 @@
 // LOVE
 #include "common/config.h"
 #include "common/int.h"
+#include "common/math.h"
 #include "graphics/Color.h"
 #include "graphics/Texture.h"
+#include "graphics/vertex.h"
 #include "common/Matrix.h"
 
 // GLAD
@@ -49,25 +51,6 @@ namespace opengl
 // with proper autocomplete in IDEs while having name mangling safety -
 // no clashes with other GL libraries when linking, etc.
 using namespace glad;
-
-// Vertex attribute indices used in shaders by LOVE. The values map to OpenGL
-// generic vertex attribute indices.
-enum VertexAttribID
-{
-	ATTRIB_POS = 0,
-	ATTRIB_TEXCOORD,
-	ATTRIB_COLOR,
-	ATTRIB_CONSTANTCOLOR,
-	ATTRIB_MAX_ENUM
-};
-
-enum VertexAttribFlags
-{
-	ATTRIBFLAG_POS = 1 << ATTRIB_POS,
-	ATTRIBFLAG_TEXCOORD = 1 << ATTRIB_TEXCOORD,
-	ATTRIBFLAG_COLOR = 1 << ATTRIB_COLOR,
-	ATTRIBFLAG_CONSTANTCOLOR = 1 << ATTRIB_CONSTANTCOLOR
-};
 
 /**
  * Thin layer between OpenGL and the rest of the program.
@@ -97,46 +80,21 @@ public:
 		VENDOR_UNKNOWN
 	};
 
-	// A rectangle representing an OpenGL viewport or a scissor box.
-	struct Viewport
+	enum FramebufferTarget
 	{
-		int x, y;
-		int w, h;
-
-		bool operator == (const Viewport &rhs) const
-		{
-			return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h;
-		}
+		FRAMEBUFFER_READ = (1 << 0),
+		FRAMEBUFFER_DRAW = (1 << 1),
+		FRAMEBUFFER_ALL  = (FRAMEBUFFER_READ | FRAMEBUFFER_DRAW),
 	};
 
-	struct
+	struct TextureFormat
 	{
-		std::vector<Matrix4> transform;
-		std::vector<Matrix4> projection;
-	} matrices;
+		GLenum internalformat = 0;
+		GLenum externalformat = 0;
+		GLenum type = 0;
 
-	class TempTransform
-	{
-	public:
-
-		TempTransform(OpenGL &gl)
-			: gl(gl)
-		{
-			gl.pushTransform();
-		}
-
-		~TempTransform()
-		{
-			gl.popTransform();
-		}
-
-		Matrix4 &get()
-		{
-			return gl.getTransform();
-		}
-
-	private:
-		OpenGL &gl;
+		bool swizzled = false;
+		GLint swizzle[4];
 	};
 
 	class TempDebugGroup
@@ -166,7 +124,6 @@ public:
 	{
 		size_t textureMemory;
 		int    drawCalls;
-		int    framebufferBinds;
 		int    shaderSwitches;
 	} stats;
 
@@ -233,15 +190,23 @@ public:
 	 **/
 	void deInitContext();
 
-	void pushTransform();
-	void popTransform();
-	Matrix4 &getTransform();
-
 	/**
 	 * Set up necessary state (LOVE-provided shader uniforms, etc.) for drawing.
 	 * This *MUST* be called directly before OpenGL drawing functions.
 	 **/
 	void prepareDraw();
+
+	/**
+	 * State-tracked glBindBuffer.
+	 * NOTE: This does not account for multiple VAOs being used! Index buffer
+	 * bindings are per-VAO in OpenGL, but this doesn't know about that.
+	 **/
+	void bindBuffer(BufferType type, GLuint buffer);
+
+	/**
+	 * glDeleteBuffers which updates our shadowed state.
+	 **/
+	void deleteBuffer(GLuint buffer);
 
 	/**
 	 * glDrawArrays and glDrawElements which increment the draw-call counter by
@@ -263,48 +228,40 @@ public:
 	 * Sets the OpenGL rendering viewport to the specified rectangle.
 	 * The y-coordinate starts at the top.
 	 **/
-	void setViewport(const Viewport &v);
-
-	/**
-	 * Gets the current OpenGL rendering viewport rectangle.
-	 **/
-	Viewport getViewport() const;
+	void setViewport(const Rect &v);
+	Rect getViewport() const;
 
 	/**
 	 * Sets the scissor box to the specified rectangle.
 	 * The y-coordinate starts at the top and is flipped internally.
 	 **/
-	void setScissor(const Viewport &v);
+	void setScissor(const Rect &v, bool canvasActive);
 
 	/**
-	 * Gets the current scissor box (regardless of whether scissoring is enabled.)
+	 * Sets the constant color (vertex attribute). This may be applied
+	 * internally at draw-time. This gets gamma-corrected internally as well.
 	 **/
-	Viewport getScissor() const;
+	void setConstantColor(const Colorf &color);
+	const Colorf &getConstantColor() const;
 
 	/**
 	 * Sets the global point size.
 	 **/
 	void setPointSize(float size);
-
-	/**
-	 * Gets the global point size.
-	 **/
 	float getPointSize() const;
 
 	/**
 	 * Calls glEnable/glDisable(GL_FRAMEBUFFER_SRGB).
 	 **/
 	void setFramebufferSRGB(bool enable);
-
-	/**
-	 * Equivalent to glIsEnabled(GL_FRAMEBUFFER_SRGB).
-	 **/
 	bool hasFramebufferSRGB() const;
 
 	/**
 	 * Binds a Framebuffer Object to the specified target.
 	 **/
-	void bindFramebuffer(GLenum target, GLuint framebuffer);
+	void bindFramebuffer(FramebufferTarget target, GLuint framebuffer);
+	GLuint getFramebuffer(FramebufferTarget target) const;
+	void deleteFramebuffer(GLuint framebuffer);
 
 	/**
 	 * Calls glUseProgram.
@@ -330,18 +287,13 @@ public:
 	void setTextureUnit(int textureunit);
 
 	/**
-	 * Helper for binding an OpenGL texture.
-	 * Makes sure we aren't redundantly binding textures.
-	 **/
-	void bindTexture(GLuint texture);
-
-	/**
 	 * Helper for binding a texture to a specific texture unit.
 	 *
 	 * @param textureunit Index in the range of [0, maxtextureunits-1]
 	 * @param restoreprev Restore previously bound texture unit when done.
 	 **/
 	void bindTextureToUnit(GLuint texture, int textureunit, bool restoreprev);
+	void bindTextureToUnit(Texture *texture, int textureunit, bool restoreprev);
 
 	/**
 	 * Helper for deleting an OpenGL texture.
@@ -362,6 +314,7 @@ public:
 	void setTextureWrap(const graphics::Texture::Wrap &w);
 
 	bool isClampZeroTextureWrapSupported() const;
+	bool isPixelShaderHighpSupported() const;
 
 	/**
 	 * Returns the maximum supported width or height of a texture.
@@ -388,15 +341,35 @@ public:
 	 **/
 	float getMaxPointSize() const;
 
+	/**
+	 * Returns the maximum anisotropic filtering value that can be used for
+	 * Texture filtering.
+	 **/
+	float getMaxAnisotropy() const;
+
 
 	void updateTextureMemorySize(size_t oldsize, size_t newsize);
+
+	/**
+	 * Gets whether the context is Core Profile OpenGL 3.2+.
+	 **/
+	bool isCoreProfile() const;
 
 	/**
 	 * Get the GPU vendor of this OpenGL context.
 	 **/
 	Vendor getVendor() const;
 
+	static GLenum getGLBufferType(BufferType type);
+	static GLenum getGLBufferUsage(vertex::Usage usage);
+	static GLint getGLWrapMode(Texture::WrapMode wmode);
+
+	static TextureFormat convertPixelFormat(PixelFormat pixelformat, bool renderbuffer, bool &isSRGB);
+	static bool isPixelFormatSupported(PixelFormat pixelformat, bool rendertarget, bool isSRGB);
+	static bool hasTextureFilteringSupport(PixelFormat pixelformat);
+
 	static const char *errorString(GLenum errorcode);
+	static const char *framebufferStatusString(GLenum status);
 
 	// Get human-readable strings for debug info.
 	static const char *debugSeverityString(GLenum severity);
@@ -408,13 +381,11 @@ private:
 	void initVendor();
 	void initOpenGLFunctions();
 	void initMaxValues();
-	void initMatrices();
 	void createDefaultTexture();
-
-	GLint getGLWrapMode(Texture::WrapMode wmode);
 
 	bool contextInitialized;
 
+	bool pixelShaderHighpSupported;
 	float maxAnisotropy;
 	int maxTextureSize;
 	int maxRenderTargets;
@@ -422,11 +393,15 @@ private:
 	int maxTextureUnits;
 	float maxPointSize;
 
+	bool coreProfile;
+
 	Vendor vendor;
 
 	// Tracked OpenGL state.
 	struct
 	{
+		GLuint boundBuffers[BUFFER_MAX_ENUM];
+
 		// Texture unit state (currently bound texture for each texture unit.)
 		std::vector<GLuint> boundTextures;
 
@@ -435,17 +410,19 @@ private:
 
 		uint32 enabledAttribArrays;
 
-		Viewport viewport;
-		Viewport scissor;
+		Colorf constantColor;
+		Colorf lastConstantColor;
+
+		Rect viewport;
+		Rect scissor;
 
 		float pointSize;
+
+		GLuint boundFramebuffers[2];
 
 		bool framebufferSRGBEnabled;
 
 		GLuint defaultTexture;
-
-		Matrix4 lastProjectionMatrix;
-		Matrix4 lastTransformMatrix;
 
 	} state;
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -55,20 +55,7 @@ void Source::pause()
 {
 }
 
-void Source::resume()
-{
-}
-
-void Source::rewind()
-{
-}
-
-bool Source::isStopped() const
-{
-	return true;
-}
-
-bool Source::isPaused() const
+bool Source::isPlaying() const
 {
 	return false;
 }
@@ -228,6 +215,31 @@ float Source::getMaxDistance() const
 int Source::getChannels() const
 {
 	return 2;
+}
+
+int Source::getFreeBufferCount() const
+{
+	return 0;
+}
+
+bool Source::queue(void *, size_t, int, int, int)
+{
+	return false;
+}
+
+bool Source::setFilter(love::audio::Filter::Type, std::vector<float> &)
+{
+	return false;
+}
+
+bool Source::setFilter()
+{
+	return false;
+}
+
+bool Source::getFilter(love::audio::Filter::Type &, std::vector<float> &)
+{
+	return false;
 }
 
 } // null

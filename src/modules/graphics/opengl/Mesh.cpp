@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,6 +23,7 @@
 #include "common/Matrix.h"
 #include "common/Exception.h"
 #include "Shader.h"
+#include "graphics/Graphics.h"
 
 // C++
 #include <algorithm>
@@ -44,7 +45,7 @@ static const char *getBuiltinAttribName(VertexAttribID attribid)
 
 static_assert(offsetof(Vertex, x) == sizeof(float) * 0, "Incorrect position offset in Vertex struct");
 static_assert(offsetof(Vertex, s) == sizeof(float) * 2, "Incorrect texture coordinate offset in Vertex struct");
-static_assert(offsetof(Vertex, r) == sizeof(float) * 4, "Incorrect color offset in Vertex struct");
+static_assert(offsetof(Vertex, color.r) == sizeof(float) * 4, "Incorrect color offset in Vertex struct");
 
 static std::vector<Mesh::AttribFormat> getDefaultVertexFormat()
 {
@@ -58,7 +59,9 @@ static std::vector<Mesh::AttribFormat> getDefaultVertexFormat()
 	return vertexformat;
 }
 
-Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size_t datasize, DrawMode drawmode, Usage usage)
+love::Type Mesh::type("Mesh", &Drawable::type);
+
+Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size_t datasize, DrawMode drawmode, vertex::Usage usage)
 	: vertexFormat(vertexformat)
 	, vbo(nullptr)
 	, vertexCount(0)
@@ -68,8 +71,8 @@ Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size
 	, elementCount(0)
 	, elementDataType(0)
 	, drawMode(drawmode)
-	, rangeMin(-1)
-	, rangeMax(-1)
+	, rangeStart(-1)
+	, rangeCount(-1)
 {
 	setupAttachedAttributes();
 	calculateAttributeSizes();
@@ -80,12 +83,12 @@ Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, const void *data, size
 	if (vertexCount == 0)
 		throw love::Exception("Data size is too small for specified vertex attribute formats.");
 
-	vbo = new GLBuffer(datasize, data, GL_ARRAY_BUFFER, getGLBufferUsage(usage), GLBuffer::MAP_EXPLICIT_RANGE_MODIFY);
+	vbo = new GLBuffer(datasize, data, BUFFER_VERTEX, usage, GLBuffer::MAP_EXPLICIT_RANGE_MODIFY);
 
 	vertexScratchBuffer = new char[vertexStride];
 }
 
-Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawMode drawmode, Usage usage)
+Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawMode drawmode, vertex::Usage usage)
 	: vertexFormat(vertexformat)
 	, vbo(nullptr)
 	, vertexCount((size_t) vertexcount)
@@ -95,8 +98,8 @@ Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawM
 	, elementCount(0)
 	, elementDataType(getGLDataTypeFromMax(vertexcount))
 	, drawMode(drawmode)
-	, rangeMin(-1)
-	, rangeMax(-1)
+	, rangeStart(-1)
+	, rangeCount(-1)
 {
 	if (vertexcount <= 0)
 		throw love::Exception("Invalid number of vertices (%d).", vertexcount);
@@ -106,10 +109,9 @@ Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawM
 
 	size_t buffersize = vertexCount * vertexStride;
 
-	vbo = new GLBuffer(buffersize, nullptr, GL_ARRAY_BUFFER, getGLBufferUsage(usage), GLBuffer::MAP_EXPLICIT_RANGE_MODIFY);
+	vbo = new GLBuffer(buffersize, nullptr, BUFFER_VERTEX, usage, GLBuffer::MAP_EXPLICIT_RANGE_MODIFY);
 
 	// Initialize the buffer's contents to 0.
-	GLBuffer::Bind bind(*vbo);
 	memset(vbo->map(), 0, buffersize);
 	vbo->setMappedRangeModified(0, vbo->getSize());
 	vbo->unmap();
@@ -117,12 +119,12 @@ Mesh::Mesh(const std::vector<AttribFormat> &vertexformat, int vertexcount, DrawM
 	vertexScratchBuffer = new char[vertexStride];
 }
 
-Mesh::Mesh(const std::vector<Vertex> &vertices, DrawMode drawmode, Usage usage)
+Mesh::Mesh(const std::vector<Vertex> &vertices, DrawMode drawmode, vertex::Usage usage)
 	: Mesh(getDefaultVertexFormat(), &vertices[0], vertices.size() * sizeof(Vertex), drawmode, usage)
 {
 }
 
-Mesh::Mesh(int vertexcount, DrawMode drawmode, Usage usage)
+Mesh::Mesh(int vertexcount, DrawMode drawmode, vertex::Usage usage)
 	: Mesh(getDefaultVertexFormat(), vertexcount, drawmode, usage)
 {
 }
@@ -192,9 +194,7 @@ void Mesh::setVertex(size_t vertindex, const void *data, size_t datasize)
 	size_t offset = vertindex * vertexStride;
 	size_t size = std::min(datasize, vertexStride);
 
-	GLBuffer::Bind bind(*vbo);
 	uint8 *bufferdata = (uint8 *) vbo->map();
-
 	memcpy(bufferdata + offset, data, size);
 
 	vbo->setMappedRangeModified(offset, size);
@@ -209,9 +209,7 @@ size_t Mesh::getVertex(size_t vertindex, void *data, size_t datasize)
 	size_t size = std::min(datasize, vertexStride);
 
 	// We're relying on vbo->map() returning read/write data... ew.
-	GLBuffer::Bind bind(*vbo);
 	const uint8 *bufferdata = (const uint8 *) vbo->map();
-
 	memcpy(data, bufferdata + offset, size);
 
 	return size;
@@ -233,9 +231,7 @@ void Mesh::setVertexAttribute(size_t vertindex, int attribindex, const void *dat
 	size_t offset = vertindex * vertexStride + getAttributeOffset(attribindex);
 	size_t size = std::min(datasize, attributeSizes[attribindex]);
 
-	GLBuffer::Bind bind(*vbo);
 	uint8 *bufferdata = (uint8 *) vbo->map();
-
 	memcpy(bufferdata + offset, data, size);
 
 	vbo->setMappedRangeModified(offset, size);
@@ -253,9 +249,7 @@ size_t Mesh::getVertexAttribute(size_t vertindex, int attribindex, void *data, s
 	size_t size = std::min(datasize, attributeSizes[attribindex]);
 
 	// We're relying on vbo->map() returning read/write data... ew.
-	GLBuffer::Bind bind(*vbo);
 	const uint8 *bufferdata = (const uint8 *) vbo->map();
-
 	memcpy(data, bufferdata + offset, size);
 
 	return size;
@@ -318,7 +312,7 @@ bool Mesh::isAttributeEnabled(const std::string &name) const
 	return it->second.enabled;
 }
 
-void Mesh::attachAttribute(const std::string &name, Mesh *mesh)
+void Mesh::attachAttribute(const std::string &name, Mesh *mesh, const std::string &attachname)
 {
 	if (mesh != this)
 	{
@@ -340,10 +334,10 @@ void Mesh::attachAttribute(const std::string &name, Mesh *mesh)
 
 	newattrib.mesh = mesh;
 	newattrib.enabled = oldattrib.mesh ? oldattrib.enabled : true;
-	newattrib.index = mesh->getAttributeIndex(name);
+	newattrib.index = mesh->getAttributeIndex(attachname);
 
 	if (newattrib.index < 0)
-		throw love::Exception("The specified mesh does not have a vertex attribute named '%s'", name.c_str());
+		throw love::Exception("The specified mesh does not have a vertex attribute named '%s'", attachname.c_str());
 
 	if (newattrib.mesh != this)
 		newattrib.mesh->retain();
@@ -354,31 +348,41 @@ void Mesh::attachAttribute(const std::string &name, Mesh *mesh)
 		oldattrib.mesh->release();
 }
 
+bool Mesh::detachAttribute(const std::string &name)
+{
+	auto it = attachedAttributes.find(name);
+
+	if (it != attachedAttributes.end() && it->second.mesh != this)
+	{
+		it->second.mesh->release();
+		attachedAttributes.erase(it);
+
+		if (getAttributeIndex(name) != -1)
+			attachAttribute(name, this, name);
+
+		return true;
+	}
+
+	return false;
+}
+
 void *Mesh::mapVertexData()
 {
-	GLBuffer::Bind bind(*vbo);
 	return vbo->map();
 }
 
 void Mesh::unmapVertexData(size_t modifiedoffset, size_t modifiedsize)
 {
-	GLBuffer::Bind bind(*vbo);
 	vbo->setMappedRangeModified(modifiedoffset, modifiedsize);
 	vbo->unmap();
 }
 
 void Mesh::flush()
 {
-	{
-		GLBuffer::Bind vbobind(*vbo);
-		vbo->unmap();
-	}
+	vbo->unmap();
 
 	if (ibo != nullptr)
-	{
-		GLBuffer::Bind ibobind(*ibo);
 		ibo->unmap();
-	}
 }
 
 /**
@@ -414,7 +418,7 @@ void Mesh::setVertexMap(const std::vector<uint32> &map)
 	}
 
 	if (!ibo && size > 0)
-		ibo = new GLBuffer(size, nullptr, GL_ELEMENT_ARRAY_BUFFER, vbo->getUsage());
+		ibo = new GLBuffer(size, nullptr, BUFFER_INDEX, vbo->getUsage());
 
 	useIndexBuffer = true;
 	elementCount = map.size();
@@ -422,7 +426,6 @@ void Mesh::setVertexMap(const std::vector<uint32> &map)
 	if (!ibo || elementCount == 0)
 		return;
 
-	GLBuffer::Bind ibobind(*ibo);
 	GLBuffer::Mapper ibomap(*ibo);
 
 	// Fill the buffer with the index values from the vector.
@@ -466,8 +469,6 @@ bool Mesh::getVertexMap(std::vector<uint32> &map) const
 
 	if (!ibo || elementCount == 0)
 		return true;
-
-	GLBuffer::Bind ibobind(*ibo);
 
 	// We unmap the buffer in Mesh::draw, Mesh::setVertexMap, and Mesh::flush.
 	void *buffer = ibo->map();
@@ -517,24 +518,28 @@ Mesh::DrawMode Mesh::getDrawMode() const
 	return drawMode;
 }
 
-void Mesh::setDrawRange(int min, int max)
+void Mesh::setDrawRange(int start, int count)
 {
-	if (min < 0 || max < 0 || min > max)
+	if (start < 0 || count <= 0)
 		throw love::Exception("Invalid draw range.");
 
-	rangeMin = min;
-	rangeMax = max;
+	rangeStart = start;
+	rangeCount = count;
 }
 
 void Mesh::setDrawRange()
 {
-	rangeMin = rangeMax = -1;
+	rangeStart = rangeCount = -1;
 }
 
-void Mesh::getDrawRange(int &min, int &max) const
+bool Mesh::getDrawRange(int &start, int &count) const
 {
-	min = rangeMin;
-	max = rangeMax;
+	if (rangeStart < 0 || rangeCount <= 0)
+		return false;
+
+	start = rangeStart;
+	count = rangeCount;
+	return true;
 }
 
 int Mesh::bindAttributeToShaderInput(int attributeindex, const std::string &inputname)
@@ -549,14 +554,14 @@ int Mesh::bindAttributeToShaderInput(int attributeindex, const std::string &inpu
 	if (Shader::getConstant(inputname.c_str(), builtinattrib))
 		attriblocation = (GLint) builtinattrib;
 	else if (Shader::current)
-		attriblocation = Shader::current->getAttribLocation(inputname);
+		attriblocation = ((Shader *) Shader::current)->getAttribLocation(inputname);
 
 	// The active shader might not use this vertex attribute name.
 	if (attriblocation < 0)
 		return attriblocation;
 
-	// Needed for unmap and glVertexAttribPointer.
-	GLBuffer::Bind vbobind(*vbo);
+	// Needed for glVertexAttribPointer.
+	vbo->bind();
 
 	// Make sure the buffer isn't mapped (sends data to GPU if needed.)
 	vbo->unmap();
@@ -565,13 +570,18 @@ int Mesh::bindAttributeToShaderInput(int attributeindex, const std::string &inpu
 	GLenum datatype = getGLDataType(format.type);
 	GLboolean normalized = (datatype == GL_UNSIGNED_BYTE);
 
-	glVertexAttribPointer(attriblocation, format.components, datatype, normalized, vertexStride, gloffset);
+	glVertexAttribPointer(attriblocation, format.components, datatype, normalized, (GLsizei) vertexStride, gloffset);
 
 	return attriblocation;
 }
 
-void Mesh::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Mesh::draw(Graphics *gfx, const Matrix4 &m)
 {
+	if (vertexCount <= 0)
+		return;
+
+	gfx->flushStreamDraws();
+
 	OpenGL::TempDebugGroup debuggroup("Mesh draw");
 
 	uint32 enabledattribs = 0;
@@ -594,51 +604,47 @@ void Mesh::draw(float x, float y, float angle, float sx, float sy, float ox, flo
 
 	gl.useVertexAttribArrays(enabledattribs);
 
-	if (texture.get())
-		gl.bindTexture(*(GLuint *) texture->getHandle());
-	else
-		gl.bindTexture(gl.getDefaultTexture());
+	gl.bindTextureToUnit(texture, 0, false);
 
-	Matrix4 m(x, y, angle, sx, sy, ox, oy, kx, ky);
-
-	OpenGL::TempTransform transform(gl);
-	transform.get() *= m;
+	Graphics::TempTransform transform(gfx, m);
 
 	gl.prepareDraw();
 
 	if (useIndexBuffer && ibo && elementCount > 0)
 	{
 		// Use the custom vertex map (index buffer) to draw the vertices.
-		GLBuffer::Bind ibo_bind(*ibo);
+		ibo->bind();
 
 		// Make sure the index buffer isn't mapped (sends data to GPU if needed.)
 		ibo->unmap();
 
-		int max = (int) elementCount - 1;
-		if (rangeMax >= 0)
-			max = std::min(rangeMax, max);
+		int start = std::min(std::max(0, rangeStart), (int) elementCount - 1);
 
-		int min = 0;
-		if (rangeMin >= 0)
-			min = std::min(rangeMin, max);
+		int count = (int) elementCount;
+		if (rangeCount > 0)
+			count = std::min(count, rangeCount);
+
+		count = std::min(count, (int) elementCount - start);
 
 		GLenum type = elementDataType;
-		const void *indices = ibo->getPointer(min * getGLDataTypeSize(type));
+		const void *indices = ibo->getPointer(start * getGLDataTypeSize(type));
 
-		gl.drawElements(getGLDrawMode(drawMode), max - min + 1, type, indices);
+		if (count > 0)
+			gl.drawElements(getGLDrawMode(drawMode), count, type, indices);
 	}
 	else
 	{
-		int max = (int) vertexCount - 1;
-		if (rangeMax >= 0)
-			max = std::min(rangeMax, max);
+		int start = std::min(std::max(0, rangeStart), (int) vertexCount - 1);
 
-		int min = 0;
-		if (rangeMin >= 0)
-			min = std::min(rangeMin, max);
+		int count = (int) vertexCount;
+		if (rangeCount > 0)
+			count = std::min(count, rangeCount);
+
+		count = std::min(count, (int) vertexCount - start);
 
 		// Normal non-indexed drawing (no custom vertex map.)
-		gl.drawArrays(getGLDrawMode(drawMode), min, max - min + 1);
+		if (count > 0)
+			gl.drawArrays(getGLDrawMode(drawMode), start, count);
 	}
 }
 
@@ -707,31 +713,6 @@ size_t Mesh::getGLDataTypeSize(GLenum datatype)
 	}
 }
 
-GLenum Mesh::getGLBufferUsage(Usage usage)
-{
-	switch (usage)
-	{
-	case USAGE_STREAM:
-		return GL_STREAM_DRAW;
-	case USAGE_DYNAMIC:
-		return GL_DYNAMIC_DRAW;
-	case USAGE_STATIC:
-		return GL_STATIC_DRAW;
-	default:
-		return 0;
-	}
-}
-
-bool Mesh::getConstant(const char *in, Usage &out)
-{
-	return usages.find(in, out);
-}
-
-bool Mesh::getConstant(Usage in, const char *&out)
-{
-	return usages.find(in, out);
-}
-
 bool Mesh::getConstant(const char *in, Mesh::DrawMode &out)
 {
 	return drawModes.find(in, out);
@@ -751,15 +732,6 @@ bool Mesh::getConstant(DataType in, const char *&out)
 {
 	return dataTypes.find(in, out);
 }
-
-StringMap<Mesh::Usage, Mesh::USAGE_MAX_ENUM>::Entry Mesh::usageEntries[] =
-{
-	{"stream", USAGE_STREAM},
-	{"dynamic", USAGE_DYNAMIC},
-	{"static", USAGE_STATIC},
-};
-
-StringMap<Mesh::Usage, Mesh::USAGE_MAX_ENUM> Mesh::usages(Mesh::usageEntries, sizeof(Mesh::usageEntries));
 
 StringMap<Mesh::DrawMode, Mesh::DRAWMODE_MAX_ENUM>::Entry Mesh::drawModeEntries[] =
 {

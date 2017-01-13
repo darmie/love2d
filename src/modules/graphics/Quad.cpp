@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -29,6 +29,8 @@ namespace love
 namespace graphics
 {
 
+love::Type Quad::type("Quad", &Object::type);
+
 Quad::Quad(const Quad::Viewport &v, double sw, double sh)
 	: sw(sw)
 	, sh(sh)
@@ -44,12 +46,13 @@ Quad::~Quad()
 void Quad::refresh(const Quad::Viewport &v, double sw, double sh)
 {
 	viewport = v;
+	this->sw = sw;
+	this->sh = sh;
 
 	// Vertices are ordered for use with triangle strips:
-	// 0----2
-	// |  / |
-	// | /  |
-	// 1----3
+	// 0---2
+	// | / |
+	// 1---3
 	vertices[0].x = 0.0f;
 	vertices[0].y = 0.0f;
 	vertices[1].x = 0.0f;
@@ -59,14 +62,14 @@ void Quad::refresh(const Quad::Viewport &v, double sw, double sh)
 	vertices[3].x = (float) v.w;
 	vertices[3].y = (float) v.h;
 
-	vertices[0].s = (float) (v.x/sw);
-	vertices[0].t = (float) (v.y/sh);
-	vertices[1].s = (float) (v.x/sw);
-	vertices[1].t = (float) ((v.y+v.h)/sh);
-	vertices[2].s = (float) ((v.x+v.w)/sw);
-	vertices[2].t = (float) (v.y/sh);
-	vertices[3].s = (float) ((v.x+v.w)/sw);
-	vertices[3].t = (float) ((v.y+v.h)/sh);
+	vertices[0].s = (float) (v.x / sw);
+	vertices[0].t = (float) (v.y / sh);
+	vertices[1].s = (float) (v.x / sw);
+	vertices[1].t = (float) ((v.y + v.h) / sh);
+	vertices[2].s = (float) ((v.x + v.w) / sw);
+	vertices[2].t = (float) (v.y / sh);
+	vertices[3].s = (float) ((v.x + v.w) / sw);
+	vertices[3].t = (float) ((v.y + v.h) / sh);
 }
 
 void Quad::setViewport(const Quad::Viewport &v)

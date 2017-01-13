@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -30,7 +30,7 @@ namespace math
 
 BezierCurve *luax_checkbeziercurve(lua_State *L, int idx)
 {
-	return luax_checktype<BezierCurve>(L, idx, MATH_BEZIER_CURVE_ID);
+	return luax_checktype<BezierCurve>(L, idx);
 }
 
 int w_BezierCurve_getDegree(lua_State *L)
@@ -44,7 +44,7 @@ int w_BezierCurve_getDerivative(lua_State *L)
 {
 	BezierCurve *curve = luax_checkbeziercurve(L, 1);
 	BezierCurve *deriv = new BezierCurve(curve->getDerivative());
-	luax_pushtype(L, MATH_BEZIER_CURVE_ID, deriv);
+	luax_pushtype(L, deriv);
 	deriv->release();
 	return 1;
 }
@@ -165,7 +165,7 @@ int w_BezierCurve_getSegment(lua_State *L)
 
 	BezierCurve *segment;
 	luax_catchexcept(L, [&](){ segment = curve->getSegment(t1, t2); });
-	luax_pushtype(L, MATH_BEZIER_CURVE_ID, segment);
+	luax_pushtype(L, segment);
 	segment->release();
 
 	return 1;
@@ -196,13 +196,13 @@ int w_BezierCurve_renderSegment(lua_State *L)
 	BezierCurve *curve = luax_checkbeziercurve(L, 1);
 	double start = luaL_checknumber(L, 2);
 	double end = luaL_checknumber(L, 3);
-	int accuracy = luaL_optinteger(L, 4, 5);
+	int accuracy = (int) luaL_optnumber(L, 4, 5);
 
 	std::vector<Vector> points;
 	luax_catchexcept(L, [&](){ points = curve->renderSegment(start, end, accuracy); });
 
-	lua_createtable(L, points.size()*2, 0);
-	for (size_t i = 0; i < points.size(); ++i)
+	lua_createtable(L, (int) points.size() * 2, 0);
+	for (int i = 0; i < (int) points.size(); ++i)
 	{
 		lua_pushnumber(L, points[i].x);
 		lua_rawseti(L, -2, 2*i+1);
@@ -234,7 +234,7 @@ static const luaL_Reg w_BezierCurve_functions[] =
 
 extern "C" int luaopen_beziercurve(lua_State *L)
 {
-	return luax_register_type(L, MATH_BEZIER_CURVE_ID, "BezierCurve", w_BezierCurve_functions, nullptr);
+	return luax_register_type(L, &BezierCurve::type, w_BezierCurve_functions, nullptr);
 }
 
 } // math

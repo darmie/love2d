@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,7 +24,7 @@
 // LOVE
 #include "common/config.h"
 #include "graphics/Drawable.h"
-#include "Font.h"
+#include "graphics/Font.h"
 #include "GLBuffer.h"
 
 namespace love
@@ -38,22 +38,24 @@ class Text : public Drawable
 {
 public:
 
-	Text(Font *font, const std::vector<Font::ColoredString> &text = {});
+	static love::Type type;
+
+	Text(love::graphics::Font *font, const std::vector<Font::ColoredString> &text = {});
 	virtual ~Text();
 
 	void set(const std::vector<Font::ColoredString> &text);
 	void set(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align);
-	void set();
 
-	int add(const std::vector<Font::ColoredString> &text, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
-	int addf(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	int add(const std::vector<Font::ColoredString> &text, const Matrix4 &m);
+	int addf(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align, const Matrix4 &m);
+
 	void clear();
 
 	// Implements Drawable.
-	virtual void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
+	void draw(Graphics *gfx, const Matrix4 &m) override;
 
-	void setFont(Font *f);
-	Font *getFont() const;
+	void setFont(love::graphics::Font *f);
+	love::graphics::Font *getFont() const;
 
 	/**
 	 * Gets the width of the currently set text.
@@ -75,15 +77,16 @@ private:
 		Font::TextInfo text_info;
 		bool use_matrix;
 		bool append_vertices;
-		Matrix3 matrix;
+		Matrix4 matrix;
 	};
 
 	void uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t vertoffset);
 	void regenerateVertices();
 	void addTextData(const TextData &s);
 
-	StrongRef<Font> font;
+	StrongRef<love::graphics::Font> font;
 	GLBuffer *vbo;
+	QuadIndices quadIndices;
 
 	std::vector<Font::DrawCommand> draw_commands;
 

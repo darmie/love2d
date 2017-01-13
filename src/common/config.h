@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -26,7 +26,7 @@
 #	define LOVE_WINDOWS 1
 	// If _USING_V110_SDK71_ is defined it means we are using the xp toolset.
 #	if defined(_MSC_VER) && (_MSC_VER >= 1700) && !_USING_V110_SDK71_
-#	include <winapifamily.h>
+#		include <winapifamily.h>
 #		if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
 #			define LOVE_WINDOWS_UWP 1
 #			define LOVE_NO_MODPLUG 1
@@ -58,6 +58,22 @@
 #	define LOVE_BIG_ENDIAN 1
 #else
 #	define LOVE_LITTLE_ENDIAN 1
+#endif
+
+// SSE instructions.
+#if defined(__SSE__)
+#	define LOVE_SIMD_SSE
+#elif defined(_MSC_VER)
+#	if defined(_M_AMD64) || defined(_M_X64)
+#		define LOVE_SIMD_SSE
+#	elif _M_IX86_FP
+#		define LOVE_SIMD_SSE
+#	endif
+#endif
+
+// NEON instructions.
+#if defined(__ARM_NEON)
+#	define LOVE_SIMD_NEON
 #endif
 
 // Warnings.
@@ -147,7 +163,6 @@
 #	define LOVE_ENABLE_THREAD
 #	define LOVE_ENABLE_THREAD_SDL
 #	define LOVE_ENABLE_TIMER
-#	define LOVE_ENABLE_TIMER_SDL
 #	define LOVE_ENABLE_TOUCH
 #	define LOVE_ENABLE_TOUCH_SDL
 #	define LOVE_ENABLE_UTF8

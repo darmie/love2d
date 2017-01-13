@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -18,27 +18,21 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_GRAPHICS_OPENGL_WRAP_CANVAS_H
-#define LOVE_GRAPHICS_OPENGL_WRAP_CANVAS_H
+#pragma once
 
 // LOVE
 #include "common/runtime.h"
 #include "Canvas.h"
-#include "graphics/wrap_Texture.h"
+#include "wrap_Texture.h"
 
 namespace love
 {
 namespace graphics
-{
-namespace opengl
 {
 
 //see Canvas.h
 Canvas *luax_checkcanvas(lua_State *L, int idx);
 extern "C" int luaopen_canvas(lua_State *L);
 
-} // opengl
 } // graphics
 } // love
-
-#endif // LOVE_GRAPHICS_OPENGL_WRAP_CANVAS_H

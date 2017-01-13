@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -18,25 +18,39 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#ifndef LOVE_GRAPHICS_OPENGL_WRAP_PROGRAM_H
-#define LOVE_GRAPHICS_OPENGL_WRAP_PROGRAM_H
+#ifndef LOVE_IMAGE_MAGPIE_EXR_HANDLER_H
+#define LOVE_IMAGE_MAGPIE_EXR_HANDLER_H
 
-#include "common/runtime.h"
-#include "common/config.h"
-#include "Shader.h"
+#include "FormatHandler.h"
 
 namespace love
 {
-namespace graphics
+namespace image
 {
-namespace opengl
+namespace magpie
 {
 
-Shader *luax_checkshader(lua_State *L, int idx);
-extern "C" int luaopen_shader(lua_State *L);
+/**
+ * Interface between ImageData and TinyEXR library, for decoding exr files.
+ **/
+class EXRHandler : public FormatHandler
+{
+public:
 
-} // opengl
-} // graphics
+	// Implements FormatHandler.
+
+	virtual bool canDecode(love::filesystem::FileData *data);
+	virtual bool canEncode(PixelFormat rawFormat, ImageData::EncodedFormat encodedFormat);
+
+	virtual DecodedImage decode(love::filesystem::FileData *data);
+	virtual EncodedImage encode(const DecodedImage &img, ImageData::EncodedFormat format);
+
+	virtual void free(unsigned char *mem);
+
+}; // EXRHandler
+
+} // magpie
+} // image
 } // love
 
-#endif
+#endif // LOVE_IMAGE_MAGPIE_EXR_HANDLER_H

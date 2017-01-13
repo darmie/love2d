@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -18,31 +18,21 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-// LOVE
-#include "Timer.h"
+#ifndef LOVE_HALF_FLOAT_H
+#define LOVE_HALF_FLOAT_H
+
+#include "int.h"
 
 namespace love
 {
-namespace timer
-{
-namespace sdl
-{
 
-Timer::Timer()
-{
-	// We don't need to initialize the SDL timer subsystem for SDL_Delay to
-	// function - and doing so causes SDL to create a worker thread.
-}
+typedef uint16 half;
 
-Timer::~Timer()
-{
-}
+void halfInit();
 
-const char *Timer::getName() const
-{
-	return "love.timer.sdl";
-}
+float halfToFloat(half h);
+half floatToHalf(float f);
 
-} // sdl
-} // timer
 } // love
+
+#endif // LOVE_HALF_FLOAT_H

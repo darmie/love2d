@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -43,14 +43,13 @@ public:
 
 	ParticleSystem *clone() override;
 	void setBufferSize(uint32 size) override;
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky) override;
+	void draw(Graphics *gfx, const Matrix4 &m) override;
 
 private:
 
 	void createVertices(size_t numparticles);
 
-	// array of transformed vertex data for all particles, for drawing
-	Vertex *particleVerts;
+	GLBuffer *buffer;
 
 	// Vertex index buffer.
 	QuadIndices quadIndices;

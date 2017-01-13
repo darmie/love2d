@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -85,6 +85,8 @@ public:
 	 * @return A normal to the Vector.
 	 **/
 	Vector getNormal(float scale) const;
+
+	float cross(const Vector &v) const;
 
 	/**
 	 * Adds a Vector to this Vector.
@@ -200,6 +202,11 @@ inline Vector Vector::getNormal(float scale) const
 	return Vector(-y * scale, x * scale);
 }
 
+inline float Vector::cross(const Vector &v) const
+{
+	return x * v.getY() - y * v.getX();
+}
+
 inline float Vector::normalize(float length)
 {
 
@@ -283,7 +290,7 @@ inline float Vector::operator * (const Vector &v) const
 
 inline float Vector::operator ^ (const Vector &v) const
 {
-	return x * v.getY() - y * v.getX();
+	return cross(v);
 }
 
 inline bool Vector::operator == (const Vector &v) const

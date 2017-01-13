@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -18,55 +18,19 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
-#include "Decoder.h"
+#pragma once
 
-#include "common/Exception.h"
+// LOVE
+#include "Transform.h"
+#include "common/runtime.h"
 
 namespace love
 {
-namespace sound
-{
-namespace lullaby
+namespace math
 {
 
-Decoder::Decoder(Data *data, const std::string &ext, int bufferSize)
-	: data(data)
-	, ext(ext)
-	, bufferSize(bufferSize)
-	, sampleRate(DEFAULT_SAMPLE_RATE)
-	, buffer(0)
-	, eof(false)
-{
-	buffer = new char[bufferSize];
-}
+Transform *luax_checktransform(lua_State *L, int idx);
+extern "C" int luaopen_transform(lua_State *L);
 
-Decoder::~Decoder()
-{
-	if (buffer != 0)
-		delete [](char *) buffer;
-}
-
-void *Decoder::getBuffer() const
-{
-	return buffer;
-}
-
-int Decoder::getSize() const
-{
-	return bufferSize;
-}
-
-int Decoder::getSampleRate() const
-{
-	return sampleRate;
-}
-
-bool Decoder::isFinished()
-{
-	return eof;
-}
-
-
-} // lullaby
-} // sound
+} // math
 } // love

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -34,6 +34,8 @@ namespace math
 class BezierCurve : public Object
 {
 public:
+
+	static love::Type type;
 
 	/**
 	 * @param controlPoints Control polygon of the curve.
@@ -136,7 +138,7 @@ public:
 	 * @param accuracy The 'fineness' of the curve.
 	 * @returns A polygon chain that approximates the segment along the curve
 	 **/
-	std::vector<Vector> renderSegment(double start, double end, size_t accuracy = 4) const;
+	std::vector<Vector> renderSegment(double start, double end, int accuracy = 4) const;
 
 private:
 	std::vector<Vector> controlPoints;

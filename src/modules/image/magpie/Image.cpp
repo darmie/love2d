@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -27,6 +27,7 @@
 
 #include "PNGHandler.h"
 #include "STBHandler.h"
+#include "EXRHandler.h"
 
 #include "ddsHandler.h"
 #include "PVRHandler.h"
@@ -43,9 +44,12 @@ namespace magpie
 
 Image::Image()
 {
+	halfInit(); // Makes sure half-float conversions can be used.
+
 	formatHandlers = {
 		new PNGHandler,
 		new STBHandler,
+		new EXRHandler,
 	};
 
 	compressedFormatHandlers = {
@@ -78,14 +82,14 @@ love::image::ImageData *Image::newImageData(love::filesystem::FileData *data)
 	return new ImageData(formatHandlers, data);
 }
 
-love::image::ImageData *Image::newImageData(int width, int height)
+love::image::ImageData *Image::newImageData(int width, int height, PixelFormat format)
 {
-	return new ImageData(formatHandlers, width, height);
+	return new ImageData(formatHandlers, width, height, format);
 }
 
-love::image::ImageData *Image::newImageData(int width, int height, void *data, bool own)
+love::image::ImageData *Image::newImageData(int width, int height, PixelFormat format, void *data, bool own)
 {
-	return new ImageData(formatHandlers, width, height, data, own);
+	return new ImageData(formatHandlers, width, height, format, data, own);
 }
 
 love::image::CompressedImageData *Image::newCompressedData(love::filesystem::FileData *data)

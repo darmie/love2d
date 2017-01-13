@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -19,18 +19,26 @@
  **/
 
 #include "Texture.h"
+#include "Graphics.h"
 
 namespace love
 {
 namespace graphics
 {
 
+love::Type Texture::type("Texture", &Drawable::type);
+
 Texture::Filter Texture::defaultFilter;
+Texture::FilterMode Texture::defaultMipmapFilter = Texture::FILTER_LINEAR;
+float Texture::defaultMipmapSharpness = 0.0f;
 
 Texture::Texture()
-	: width(0)
+	: format(PIXELFORMAT_UNKNOWN)
+	, width(0)
 	, height(0)
-	, filter(getDefaultFilter())
+	, pixelWidth(0)
+	, pixelHeight(0)
+	, filter(defaultFilter)
 	, wrap()
 	, vertices()
 {
@@ -38,6 +46,43 @@ Texture::Texture()
 
 Texture::~Texture()
 {
+}
+
+PixelFormat Texture::getPixelFormat() const
+{
+	return format;
+}
+
+void Texture::draw(Graphics *gfx, const Matrix4 &m)
+{
+	drawv(gfx, m, vertices);
+}
+
+void Texture::drawq(Graphics *gfx, Quad *quad, const Matrix4 &m)
+{
+	drawv(gfx, m, quad->getVertices());
+}
+
+void Texture::drawv(Graphics *gfx, const Matrix4 &localTransform, const Vertex *v)
+{
+	Matrix4 t(gfx->getTransform(), localTransform);
+
+	Vertex verts[4] = {v[0], v[1], v[2], v[3]};
+	t.transform(verts, v, 4);
+
+	Color c = toColor(gfx->getColor());
+
+	for (int i = 0; i < 4; i++)
+		verts[i].color = c;
+
+	Graphics::StreamDrawRequest req;
+	req.formats[0] = vertex::CommonFormat::XYf_STf_RGBAub;
+	req.indexMode = vertex::TriangleIndexMode::QUADS;
+	req.vertexCount = 4;
+	req.texture = this;
+
+	Graphics::StreamVertexData data = gfx->requestStreamDraw(req);
+	memcpy(data.stream[0], verts, sizeof(Vertex) * 4);
 }
 
 int Texture::getWidth() const
@@ -48,6 +93,21 @@ int Texture::getWidth() const
 int Texture::getHeight() const
 {
 	return height;
+}
+
+int Texture::getPixelWidth() const
+{
+	return pixelWidth;
+}
+
+int Texture::getPixelHeight() const
+{
+	return pixelHeight;
+}
+
+float Texture::getPixelDensity() const
+{
+	return (float) pixelHeight / (float) height;
 }
 
 const Texture::Filter &Texture::getFilter() const
@@ -63,16 +123,6 @@ const Texture::Wrap &Texture::getWrap() const
 const Vertex *Texture::getVertices() const
 {
 	return vertices;
-}
-
-void Texture::setDefaultFilter(const Filter &f)
-{
-	defaultFilter = f;
-}
-
-const Texture::Filter &Texture::getDefaultFilter()
-{
-	return defaultFilter;
 }
 
 bool Texture::validateFilter(const Filter &f, bool mipmapsAllowed)

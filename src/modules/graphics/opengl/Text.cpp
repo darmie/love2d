@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -20,6 +20,7 @@
 
 #include "Text.h"
 #include "common/Matrix.h"
+#include "graphics/Graphics.h"
 
 #include <algorithm>
 
@@ -30,9 +31,12 @@ namespace graphics
 namespace opengl
 {
 
-Text::Text(Font *font, const std::vector<Font::ColoredString> &text)
+love::Type Text::type("Text", &Drawable::type);
+
+Text::Text(love::graphics::Font *font, const std::vector<Font::ColoredString> &text)
 	: font(font)
 	, vbo(nullptr)
+	, quadIndices(20)
 	, vert_offset(0)
 	, texture_cache_id((uint32) -1)
 {
@@ -58,13 +62,12 @@ void Text::uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t
 		if (vbo != nullptr)
 			newsize = std::max(size_t(vbo->getSize() * 1.5), newsize);
 
-		GLBuffer *new_vbo = new GLBuffer(newsize, nullptr, GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW);
+		GLBuffer *new_vbo = new GLBuffer(newsize, nullptr, BUFFER_VERTEX, vertex::USAGE_DYNAMIC);
 
 		if (vbo != nullptr)
 		{
 			try
 			{
-				GLBuffer::Bind bind(*vbo);
 				vbodata = (uint8 *) vbo->map();
 			}
 			catch (love::Exception &)
@@ -73,7 +76,6 @@ void Text::uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t
 				throw;
 			}
 
-			GLBuffer::Bind bind(*new_vbo);
 			new_vbo->fill(0, vbo->getSize(), vbodata);
 		}
 
@@ -83,7 +85,6 @@ void Text::uploadVertices(const std::vector<Font::GlyphVertex> &vertices, size_t
 
 	if (vbo != nullptr && datasize > 0)
 	{
-		GLBuffer::Bind bind(*vbo);
 		vbodata = (uint8 *) vbo->map();
 		memcpy(vbodata + offset, &vertices[0], datasize);
 		// We unmap when we draw, to avoid unnecessary full map()/unmap() calls.
@@ -114,11 +115,13 @@ void Text::addTextData(const TextData &t)
 
 	Font::TextInfo text_info;
 
+	Colorf constantcolor = Colorf(1.0f, 1.0f, 1.0f, 1.0f);
+
 	// We only have formatted text if the align mode is valid.
 	if (t.align == Font::ALIGN_MAX_ENUM)
-		new_commands = font->generateVertices(t.codepoints, vertices, 0.0f, Vector(0.0f, 0.0f), &text_info);
+		new_commands = font->generateVertices(t.codepoints, constantcolor, vertices, 0.0f, Vector(0.0f, 0.0f), &text_info);
 	else
-		new_commands = font->generateVerticesFormatted(t.codepoints, t.wrap, t.align, vertices, &text_info);
+		new_commands = font->generateVerticesFormatted(t.codepoints, constantcolor, t.wrap, t.align, vertices, &text_info);
 
 	if (t.use_matrix)
 		t.matrix.transform(&vertices[0], &vertices[0], (int) vertices.size());
@@ -177,30 +180,23 @@ void Text::set(const std::vector<Font::ColoredString> &text)
 void Text::set(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align)
 {
 	if (text.empty() || (text.size() == 1 && text[0].str.empty()))
-		return set();
+		return clear();
 
 	Font::ColoredCodepoints codepoints;
 	Font::getCodepointsFromString(text, codepoints);
 
-	addTextData({codepoints, wrap, align, {}, false, false, Matrix3()});
+	addTextData({codepoints, wrap, align, {}, false, false, Matrix4()});
 }
 
-void Text::set()
+int Text::add(const std::vector<Font::ColoredString> &text, const Matrix4 &m)
 {
-	clear();
+	return addf(text, -1.0f, Font::ALIGN_MAX_ENUM, m);
 }
 
-int Text::add(const std::vector<Font::ColoredString> &text, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
-{
-	return addf(text, -1.0f, Font::ALIGN_MAX_ENUM, x, y, angle, sx, sy, ox, oy, kx, ky);
-}
-
-int Text::addf(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align, float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+int Text::addf(const std::vector<Font::ColoredString> &text, float wrap, Font::AlignMode align, const Matrix4 &m)
 {
 	Font::ColoredCodepoints codepoints;
 	Font::getCodepointsFromString(text, codepoints);
-
-	Matrix3 m(x, y, angle, sx, sy, ox, oy, kx, ky);
 
 	addTextData({codepoints, wrap, align, {}, true, true, m});
 
@@ -215,10 +211,12 @@ void Text::clear()
 	vert_offset = 0;
 }
 
-void Text::draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky)
+void Text::draw(Graphics *gfx, const Matrix4 &m)
 {
 	if (vbo == nullptr || draw_commands.empty())
 		return;
+
+	gfx->flushStreamDraws();
 
 	OpenGL::TempDebugGroup debuggroup("Text object draw");
 
@@ -226,30 +224,51 @@ void Text::draw(float x, float y, float angle, float sx, float sy, float ox, flo
 	if (font->getTextureCacheID() != texture_cache_id)
 		regenerateVertices();
 
+	int totalverts = 0;
+	for (const Font::DrawCommand &cmd : draw_commands)
+		totalverts = std::max(cmd.startvertex + cmd.vertexcount, totalverts);
+
+	if ((size_t) totalverts / 4 > quadIndices.getSize())
+		quadIndices = QuadIndices((size_t) totalverts / 4);
+
 	const size_t pos_offset   = offsetof(Font::GlyphVertex, x);
 	const size_t tex_offset   = offsetof(Font::GlyphVertex, s);
 	const size_t color_offset = offsetof(Font::GlyphVertex, color.r);
 	const size_t stride = sizeof(Font::GlyphVertex);
 
-	OpenGL::TempTransform transform(gl);
-	transform.get() *= Matrix4(x, y, angle, sx, sy, ox, oy, kx, ky);
+	const GLenum gltype = quadIndices.getType();
+	const size_t elemsize = quadIndices.getElementSize();
 
-	{
-		GLBuffer::Bind bind(*vbo);
-		vbo->unmap(); // Make sure all pending data is flushed to the GPU.
+	Graphics::TempTransform transform(gfx, m);
 
-		// Font::drawVertices expects AttribPointer calls to be done already.
-		glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, stride, vbo->getPointer(pos_offset));
-		glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_UNSIGNED_SHORT, GL_TRUE, stride, vbo->getPointer(tex_offset));
-		glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, vbo->getPointer(color_offset));
-	}
+	gl.prepareDraw();
+
+	vbo->bind();
+	vbo->unmap(); // Make sure all pending data is flushed to the GPU.
+
+	glVertexAttribPointer(ATTRIB_POS, 2, GL_FLOAT, GL_FALSE, stride, vbo->getPointer(pos_offset));
+	glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_UNSIGNED_SHORT, GL_TRUE, stride, vbo->getPointer(tex_offset));
+	glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, vbo->getPointer(color_offset));
 
 	gl.useVertexAttribArrays(ATTRIBFLAG_POS | ATTRIBFLAG_TEXCOORD | ATTRIBFLAG_COLOR);
 
-	font->drawVertices(draw_commands, true);
+	quadIndices.getBuffer()->bind();
+
+	// We need a separate draw call for every section of the text which uses a
+	// different texture than the previous section.
+	for (const Font::DrawCommand &cmd : draw_commands)
+	{
+		GLsizei count = (cmd.vertexcount / 4) * 6;
+		size_t offset = (cmd.startvertex / 4) * 6 * elemsize;
+
+		// TODO: Use glDrawElementsBaseVertex when supported?
+		gl.bindTextureToUnit((GLuint) cmd.texture, 0, false);
+
+		gl.drawElements(GL_TRIANGLES, count, gltype, quadIndices.getPointer(offset));
+	}
 }
 
-void Text::setFont(Font *f)
+void Text::setFont(love::graphics::Font *f)
 {
 	font.set(f);
 
@@ -259,7 +278,7 @@ void Text::setFont(Font *f)
 	regenerateVertices();
 }
 
-Font *Text::getFont() const
+love::graphics::Font *Text::getFont() const
 {
 	return font.get();
 }

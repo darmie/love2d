@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -49,6 +49,8 @@ float calculate_variation(float inner, float outer, float var)
 }
 
 } // anonymous namespace
+
+love::Type ParticleSystem::type("ParticleSystem", &Drawable::type);
 
 ParticleSystem::ParticleSystem(Texture *texture, uint32 size)
 	: pMem(nullptr)
@@ -697,31 +699,11 @@ love::Vector ParticleSystem::getOffset() const
 void ParticleSystem::setColor(const std::vector<Colorf> &newColors)
 {
 	colors = newColors;
-
-	for (Colorf &c : colors)
-	{
-		// We want to store the colors as [0, 1], rather than [0, 255].
-		c.r /= 255.0f;
-		c.g /= 255.0f;
-		c.b /= 255.0f;
-		c.a /= 255.0f;
-	}
 }
 
 std::vector<Colorf> ParticleSystem::getColor() const
 {
-	// The particle system stores colors in the range of [0, 1]...
-	std::vector<Colorf> ncolors(colors);
-
-	for (Colorf &c : ncolors)
-	{
-		c.r *= 255.0f;
-		c.g *= 255.0f;
-		c.b *= 255.0f;
-		c.a *= 255.0f;
-	}
-
-	return ncolors;
+	return colors;
 }
 
 void ParticleSystem::setQuads(const std::vector<Quad *> &newQuads)

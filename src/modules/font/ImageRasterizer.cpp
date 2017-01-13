@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -34,12 +34,17 @@ inline bool equal(const love::image::pixel &a, const love::image::pixel &b)
 	return (a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a);
 }
 
-ImageRasterizer::ImageRasterizer(love::image::ImageData *data, uint32 *glyphs, int numglyphs, int extraspacing)
+ImageRasterizer::ImageRasterizer(love::image::ImageData *data, uint32 *glyphs, int numglyphs, int extraspacing, float pixeldensity)
 	: imageData(data)
 	, glyphs(glyphs)
 	, numglyphs(numglyphs)
 	, extraSpacing(extraspacing)
 {
+	this->pixelDensity = pixeldensity;
+
+	if (data->getFormat() != PIXELFORMAT_RGBA8)
+		throw love::Exception("Only 32-bit RGBA images are supported in Image Fonts!");
+
 	load();
 }
 
@@ -66,7 +71,7 @@ GlyphData *ImageRasterizer::getGlyphData(uint32 glyph) const
 
 	gm.height = metrics.height;
 
-	GlyphData *g = new GlyphData(glyph, gm, GlyphData::FORMAT_RGBA);
+	GlyphData *g = new GlyphData(glyph, gm, PIXELFORMAT_RGBA8);
 
 	if (gm.width == 0)
 		return g;
@@ -144,6 +149,11 @@ int ImageRasterizer::getGlyphCount() const
 bool ImageRasterizer::hasGlyph(uint32 glyph) const
 {
 	return imageGlyphs.find(glyph) != imageGlyphs.end();
+}
+
+Rasterizer::DataType ImageRasterizer::getDataType() const
+{
+	return DATA_IMAGE;
 }
 
 } // font

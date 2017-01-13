@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -30,7 +30,7 @@ namespace opengl
 
 Image *luax_checkimage(lua_State *L, int idx)
 {
-	return luax_checktype<Image>(L, idx, GRAPHICS_IMAGE_ID);
+	return luax_checktype<Image>(L, idx);
 }
 
 int w_Image_setMipmapFilter(lua_State *L)
@@ -98,7 +98,7 @@ int w_Image_getData(lua_State *L)
 	{
 		for (const auto &cdata : i->getCompressedData())
 		{
-			luax_pushtype(L, IMAGE_COMPRESSED_IMAGE_DATA_ID, cdata.get());
+			luax_pushtype(L, cdata.get());
 			n++;
 		}
 	}
@@ -106,7 +106,7 @@ int w_Image_getData(lua_State *L)
 	{
 		for (const auto &data : i->getImageData())
 		{
-			luax_pushtype(L, IMAGE_IMAGE_DATA_ID, data.get());
+			luax_pushtype(L, data.get());
 			n++;
 		}
 	}
@@ -114,25 +114,28 @@ int w_Image_getData(lua_State *L)
 	return n;
 }
 
-static const char *imageFlagName(Image::FlagType flagtype)
+const char *luax_imageSettingName(Image::SettingType settingtype)
 {
 	const char *name = nullptr;
-	Image::getConstant(flagtype, name);
+	Image::getConstant(settingtype, name);
 	return name;
 }
 
 int w_Image_getFlags(lua_State *L)
 {
 	Image *i = luax_checkimage(L, 1);
-	Image::Flags flags = i->getFlags();
+	Image::Settings settings = i->getFlags();
 
 	lua_createtable(L, 0, 2);
 
-	lua_pushboolean(L, flags.mipmaps);
-	lua_setfield(L, -2, imageFlagName(Image::FLAG_TYPE_MIPMAPS));
+	lua_pushboolean(L, settings.mipmaps);
+	lua_setfield(L, -2, luax_imageSettingName(Image::SETTING_MIPMAPS));
 
-	lua_pushboolean(L, flags.linear);
-	lua_setfield(L, -2, imageFlagName(Image::FLAG_TYPE_LINEAR));
+	lua_pushboolean(L, settings.linear);
+	lua_setfield(L, -2, luax_imageSettingName(Image::SETTING_LINEAR));
+
+	lua_pushnumber(L, settings.pixeldensity);
+	lua_setfield(L, -2, luax_imageSettingName(Image::SETTING_PIXELDENSITY));
 
 	return 1;
 }
@@ -150,7 +153,7 @@ static const luaL_Reg w_Image_functions[] =
 
 extern "C" int luaopen_image(lua_State *L)
 {
-	return luax_register_type(L, GRAPHICS_IMAGE_ID, "Image", w_Texture_functions, w_Image_functions, nullptr);
+	return luax_register_type(L, &Image::type, w_Texture_functions, w_Image_functions, nullptr);
 }
 
 } // opengl

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -44,6 +44,8 @@ class Image : public Module
 {
 public:
 
+	static love::Type type;
+
 	virtual ~Image() {}
 
 	// Implements Module.
@@ -62,7 +64,7 @@ public:
 	 * @param height The height of the ImageData.
 	 * @return The new ImageData.
 	 **/
-	virtual ImageData *newImageData(int width, int height) = 0;
+	virtual ImageData *newImageData(int width, int height, PixelFormat format = PIXELFORMAT_RGBA8) = 0;
 
 	/**
 	 * Creates empty ImageData with the given size.
@@ -73,7 +75,7 @@ public:
 	 *        copy it.
 	 * @return The new ImageData.
 	 **/
-	virtual ImageData *newImageData(int width, int height, void *data, bool own = false) = 0;
+	virtual ImageData *newImageData(int width, int height, PixelFormat format, void *data, bool own = false) = 0;
 
 	/**
 	 * Creates new CompressedImageData from FileData.

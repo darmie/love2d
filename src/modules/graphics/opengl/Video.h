@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -40,21 +40,28 @@ class Video : public Drawable, public Volatile
 {
 public:
 
-	Video(love::video::VideoStream *stream);
+	static love::Type type;
+
+	Video(love::video::VideoStream *stream, float pixeldensity = 1.0f);
 	~Video();
 
 	// Volatile
-	bool loadVolatile();
-	void unloadVolatile();
+	bool loadVolatile() override;
+	void unloadVolatile() override;
+
+	// Drawable
+	void draw(Graphics *gfx, const Matrix4 &m) override;
 
 	love::video::VideoStream *getStream();
-	void draw(float x, float y, float angle, float sx, float sy, float ox, float oy, float kx, float ky);
 
 	love::audio::Source *getSource();
 	void setSource(love::audio::Source *source);
 
 	int getWidth() const;
 	int getHeight() const;
+
+	int getPixelWidth() const;
+	int getPixelHeight() const;
 
 	void setFilter(const Texture::Filter &f);
 	const Texture::Filter &getFilter() const;
@@ -65,6 +72,9 @@ private:
 
 	StrongRef<love::video::VideoStream> stream;
 	StrongRef<love::audio::Source> source;
+
+	int width;
+	int height;
 
 	GLuint textures[3];
 

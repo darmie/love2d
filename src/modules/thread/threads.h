@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -79,6 +79,8 @@ private:
 class Threadable : public love::Object
 {
 public:
+	static love::Type type;
+
 	Threadable();
 	virtual ~Threadable();
 

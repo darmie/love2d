@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -44,6 +44,7 @@ public:
 	// Raw RGBA pixel data.
 	struct DecodedImage
 	{
+		PixelFormat format = PIXELFORMAT_RGBA8;
 		int width   = 0;
 		int height  = 0;
 		size_t size = 0;
@@ -75,7 +76,7 @@ public:
 	/**
 	 * Whether this format handler can encode to a particular format.
 	 **/
-	virtual bool canEncode(ImageData::EncodedFormat format);
+	virtual bool canEncode(PixelFormat rawFormat, ImageData::EncodedFormat encodedFormat);
 
 	/**
 	 * Decodes an image from its encoded form into raw pixel data.

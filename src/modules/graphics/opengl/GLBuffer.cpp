@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,6 +21,7 @@
 #include "GLBuffer.h"
 
 #include "common/Exception.h"
+#include "graphics/vertex.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -34,11 +35,10 @@ namespace graphics
 namespace opengl
 {
 
-GLBuffer::GLBuffer(size_t size, const void *data, GLenum target, GLenum usage, uint32 mapflags)
-	: is_bound(false)
-	, is_mapped(false)
+GLBuffer::GLBuffer(size_t size, const void *data, BufferType type, vertex::Usage usage, uint32 mapflags)
+	: is_mapped(false)
 	, size(size)
-	, target(target)
+	, type(type)
 	, usage(usage)
 	, vbo(0)
 	, memory_map(nullptr)
@@ -46,6 +46,8 @@ GLBuffer::GLBuffer(size_t size, const void *data, GLenum target, GLenum usage, u
 	, modified_size(0)
 	, map_flags(mapflags)
 {
+	target = OpenGL::getGLBufferType(type);
+
 	try
 	{
 		memory_map = new char[size];
@@ -92,15 +94,19 @@ void GLBuffer::unmapStatic(size_t offset, size_t size)
 		return;
 
 	// Upload the mapped data to the buffer.
-	glBufferSubData(getTarget(), (GLintptr) offset, (GLsizeiptr) size, memory_map + offset);
+	gl.bindBuffer(type, vbo);
+	glBufferSubData(target, (GLintptr) offset, (GLsizeiptr) size, memory_map + offset);
 }
 
 void GLBuffer::unmapStream()
 {
+	GLenum glusage = OpenGL::getGLBufferUsage(getUsage());
+
 	// "orphan" current buffer to avoid implicit synchronisation on the GPU:
 	// http://www.seas.upenn.edu/~pcozzi/OpenGLInsights/OpenGLInsights-AsynchronousBufferTransfers.pdf
-	glBufferData(getTarget(), (GLsizeiptr) getSize(), nullptr,    getUsage());
-	glBufferData(getTarget(), (GLsizeiptr) getSize(), memory_map, getUsage());
+	gl.bindBuffer(type, vbo);
+	glBufferData(target, (GLsizeiptr) getSize(), nullptr,    glusage);
+	glBufferData(target, (GLsizeiptr) getSize(), memory_map, glusage);
 }
 
 void GLBuffer::unmap()
@@ -119,17 +125,9 @@ void GLBuffer::unmap()
 		modified_size = getSize();
 	}
 
-	// VBO::bind is a no-op when the VBO is mapped, so we have to make sure it's
-	// bound here.
-	if (!is_bound)
-	{
-		glBindBuffer(getTarget(), vbo);
-		is_bound = true;
-	}
-
 	if (modified_size > 0)
 	{
-		switch (getUsage())
+		switch (OpenGL::getGLBufferUsage(getUsage()))
 		{
 		case GL_STATIC_DRAW:
 			unmapStatic(modified_offset, modified_size);
@@ -173,19 +171,7 @@ void GLBuffer::setMappedRangeModified(size_t offset, size_t modifiedsize)
 
 void GLBuffer::bind()
 {
-	if (!is_mapped)
-	{
-		glBindBuffer(getTarget(), vbo);
-		is_bound = true;
-	}
-}
-
-void GLBuffer::unbind()
-{
-	if (is_bound)
-		glBindBuffer(getTarget(), 0);
-
-	is_bound = false;
+	gl.bindBuffer(getType(), vbo);
 }
 
 void GLBuffer::fill(size_t offset, size_t size, const void *data)
@@ -195,7 +181,10 @@ void GLBuffer::fill(size_t offset, size_t size, const void *data)
 	if (is_mapped)
 		setMappedRangeModified(offset, size);
 	else
-		glBufferSubData(getTarget(), (GLintptr) offset, (GLsizeiptr) size, data);
+	{
+		gl.bindBuffer(type, vbo);
+		glBufferSubData(target, (GLintptr) offset, (GLsizeiptr) size, data);
+	}
 }
 
 const void *GLBuffer::getPointer(size_t offset) const
@@ -217,7 +206,7 @@ bool GLBuffer::load(bool restore)
 {
 	glGenBuffers(1, &vbo);
 
-	GLBuffer::Bind bind(*this);
+	bind();
 
 	while (glGetError() != GL_NO_ERROR)
 		/* Clear the error buffer. */;
@@ -226,7 +215,7 @@ bool GLBuffer::load(bool restore)
 	const GLvoid *src = restore ? memory_map : nullptr;
 
 	// Note that if 'src' is '0', no data will be copied.
-	glBufferData(getTarget(), (GLsizeiptr) getSize(), src, getUsage());
+	glBufferData(target, (GLsizeiptr) getSize(), src, OpenGL::getGLBufferUsage(getUsage()));
 
 	return (glGetError() == GL_NO_ERROR);
 }
@@ -234,8 +223,7 @@ bool GLBuffer::load(bool restore)
 void GLBuffer::unload()
 {
 	is_mapped = false;
-
-	glDeleteBuffers(1, &vbo);
+	gl.deleteBuffer(vbo);
 	vbo = 0;
 }
 
@@ -274,7 +262,7 @@ QuadIndices::QuadIndices(size_t size)
 		// QuadIndices will propagate the exception and keep the old GLBuffer.
 		try
 		{
-			newbuffer = new GLBuffer(buffersize, nullptr, GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
+			newbuffer = new GLBuffer(buffersize, nullptr, BUFFER_INDEX, vertex::USAGE_STATIC);
 			newindices = new char[buffersize];
 		}
 		catch (std::bad_alloc &)
@@ -377,24 +365,9 @@ const void *QuadIndices::getIndices(size_t offset) const
 template <typename T>
 void QuadIndices::fill()
 {
-	T *inds = (T *) indices;
+	using namespace love::graphics::vertex;
 
-	// 0----2
-	// |  / |
-	// | /  |
-	// 1----3
-	for (size_t i = 0; i < maxSize; ++i)
-	{
-		inds[i*6+0] = T(i * 4 + 0);
-		inds[i*6+1] = T(i * 4 + 1);
-		inds[i*6+2] = T(i * 4 + 2);
-
-		inds[i*6+3] = T(i * 4 + 2);
-		inds[i*6+4] = T(i * 4 + 1);
-		inds[i*6+5] = T(i * 4 + 3);
-	}
-
-	GLBuffer::Bind bind(*indexBuffer);
+	fillIndices(TriangleIndexMode::QUADS, 0, maxSize * 4, (T *) indices);
 	indexBuffer->fill(0, indexBuffer->getSize(), indices);
 }
 

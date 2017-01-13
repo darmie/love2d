@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -24,6 +24,7 @@
 // LOVE
 #include "common/Object.h"
 #include "audio/Source.h"
+#include "audio/Filter.h"
 
 namespace love
 {
@@ -42,10 +43,7 @@ public:
 	virtual bool play();
 	virtual void stop();
 	virtual void pause();
-	virtual void resume();
-	virtual void rewind();
-	virtual bool isStopped() const;
-	virtual bool isPaused() const;
+	virtual bool isPlaying() const;
 	virtual bool isFinished() const;
 	virtual bool update();
 	virtual void setPitch(float pitch);
@@ -78,6 +76,13 @@ public:
 	virtual void setMaxDistance(float distance);
 	virtual float getMaxDistance() const;
 	virtual int getChannels() const;
+
+	virtual int getFreeBufferCount() const;
+	virtual bool queue(void *data, size_t length, int dataSampleRate, int dataBitDepth, int dataChannels);
+
+	virtual bool setFilter(love::audio::Filter::Type type, std::vector<float> &params);
+	virtual bool setFilter();
+	virtual bool getFilter(love::audio::Filter::Type &type, std::vector<float> &params);
 
 private:
 

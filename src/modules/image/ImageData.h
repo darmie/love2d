@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -23,6 +23,10 @@
 
 // LOVE
 #include "common/Data.h"
+#include "common/StringMap.h"
+#include "common/int.h"
+#include "common/pixelformat.h"
+#include "common/halffloat.h"
 #include "filesystem/FileData.h"
 #include "thread/threads.h"
 
@@ -40,12 +44,22 @@ struct pixel
 	unsigned char r, g, b, a;
 };
 
+union Pixel
+{
+	uint8  rgba8[4];
+	uint16 rgba16[4];
+	half   rgba16f[4];
+	float  rgba32f[4];
+};
+
 /**
  * Represents raw pixel data.
  **/
 class ImageData : public Data
 {
 public:
+
+	static love::Type type;
 
 	enum EncodedFormat
 	{
@@ -56,6 +70,8 @@ public:
 
 	ImageData();
 	virtual ~ImageData();
+
+	PixelFormat getFormat() const;
 
 	/**
 	 * Paste part of one ImageData onto another. The subregion defined by the top-left
@@ -78,13 +94,11 @@ public:
 
 	/**
 	 * Gets the width of this ImageData.
-	 * @return The width of this ImageData.
 	 **/
 	int getWidth() const;
 
 	/**
 	 * Gets the height of this ImageData.
-	 * @return The height of this ImageData.
 	 **/
 	int getHeight() const;
 
@@ -94,13 +108,7 @@ public:
 	 * @param y The location along the y-axis.
 	 * @param p The color to use for the given location.
 	 **/
-	void setPixel(int x, int y, pixel p);
-
-	/**
-	 * Sets the pixel at location (x,y).
-	 * Not thread-safe, and doesn't verify the coordinates!
-	 **/
-	void setPixelUnsafe(int x, int y, pixel p);
+	void setPixel(int x, int y, const Pixel &p);
 
 	/**
 	 * Gets the pixel at location (x,y).
@@ -108,13 +116,7 @@ public:
 	 * @param y The location along the y-axis.
 	 * @return The color for the given location.
 	 **/
-	pixel getPixel(int x, int y) const;
-
-	/**
-	 * Gets the pixel at location (x,y).
-	 * Not thread-safe, and doesn't verify the coordinates!
-	 **/
-	pixel getPixelUnsafe(int x, int y) const;
+	void getPixel(int x, int y, Pixel &p) const;
 
 	/**
 	 * Encodes raw pixel data into a given format.
@@ -129,10 +131,16 @@ public:
 	virtual void *getData() const;
 	virtual size_t getSize() const;
 
+	size_t getPixelSize() const;
+
+	static bool validPixelFormat(PixelFormat format);
+
 	static bool getConstant(const char *in, EncodedFormat &out);
 	static bool getConstant(EncodedFormat in, const char *&out);
 
 protected:
+
+	PixelFormat format;
 
 	// The width of the image data.
 	int width;

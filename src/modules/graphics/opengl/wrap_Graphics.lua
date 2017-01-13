@@ -3,7 +3,7 @@ R"luastring"--(
 -- There is a matching delimiter at the bottom of the file.
 
 --[[
-Copyright (c) 2006-2016 LOVE Development Team
+Copyright (c) 2006-2017 LOVE Development Team
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
@@ -46,7 +46,6 @@ GLSL.SYNTAX = [[
 
 -- Uniforms shared by the vertex and pixel shader stages.
 GLSL.UNIFORMS = [[
-#ifdef GL_ES
 // According to the GLSL ES 1.0 spec, uniform precision must match between stages,
 // but we can't guarantee that highp is always supported in fragment shaders...
 // We *really* don't want to use mediump for these in vertex shaders though.
@@ -59,12 +58,6 @@ uniform LOVE_UNIFORM_PRECISION mat4 TransformMatrix;
 uniform LOVE_UNIFORM_PRECISION mat4 ProjectionMatrix;
 uniform LOVE_UNIFORM_PRECISION mat4 TransformProjectionMatrix;
 uniform LOVE_UNIFORM_PRECISION mat3 NormalMatrix;
-#else
-#define TransformMatrix gl_ModelViewMatrix
-#define ProjectionMatrix gl_ProjectionMatrix
-#define TransformProjectionMatrix gl_ModelViewProjectionMatrix
-#define NormalMatrix gl_NormalMatrix
-#endif
 uniform mediump vec4 love_ScreenSize;]]
 
 GLSL.FUNCTIONS = [[
@@ -348,16 +341,20 @@ end
 
 love.graphics._setDefaultShaderCode(defaults, defaults_gammacorrect)
 
-function love.graphics.newVideo(file, loadaudio)
-	local video = love.graphics._newVideo(file)
+
+function love.graphics.newVideo(file, settings)
+	settings = settings == nil and {} or settings
+	if type(settings) ~= "table" then error("bad argument #2 to newVideo (expected table)", 2) end
+
+	local video = love.graphics._newVideo(file, settings.pixeldensity)
 	local source, success
 
-	if loadaudio ~= false and love.audio then
-		success, source = pcall(love.audio.newSource, video:getStream():getFilename())
+	if settings.audio ~= false and love.audio then
+		success, source = pcall(love.audio.newSource, video:getStream():getFilename(), "stream")
 	end
 	if success then
 		video:setSource(source)
-	elseif loadaudio == true then
+	elseif settings.audio == true then
 		if love.audio then
 			error("Video had no audio track", 2)
 		else

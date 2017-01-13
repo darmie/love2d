@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2006-2016 LOVE Development Team
+ * Copyright (c) 2006-2017 LOVE Development Team
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -131,11 +131,13 @@ std::string BMFontLine::getAttributeString(const char *name) const
 } // anonymous namespace
 
 
-BMFontRasterizer::BMFontRasterizer(love::filesystem::FileData *fontdef, const std::vector<image::ImageData *> &imagelist)
+BMFontRasterizer::BMFontRasterizer(love::filesystem::FileData *fontdef, const std::vector<image::ImageData *> &imagelist, float pixeldensity)
 	: fontSize(0)
 	, unicode(false)
 	, lineHeight(0)
 {
+	this->pixelDensity = pixeldensity;
+
 	const std::string &filename = fontdef->getFilename();
 
 	size_t separatorpos = filename.rfind('/');
@@ -189,6 +191,7 @@ void BMFontRasterizer::parseConfig(const std::string &configtext)
 			if (images[pageindex].get() == nullptr)
 			{
 				using namespace love::filesystem;
+				using namespace love::image;
 
 				auto filesystem  = Module::getInstance<Filesystem>(Module::M_FILESYSTEM);
 				auto imagemodule = Module::getInstance<image::Image>(Module::M_IMAGE);
@@ -201,8 +204,16 @@ void BMFontRasterizer::parseConfig(const std::string &configtext)
 				// read() returns a retained ref already.
 				StrongRef<FileData> data(filesystem->read(filename.c_str()), Acquire::NORETAIN);
 
+				ImageData *imagedata = imagemodule->newImageData(data.get());
+
+				if (imagedata->getFormat() != PIXELFORMAT_RGBA8)
+				{
+					imagedata->release();
+					throw love::Exception("Only 32-bit RGBA images are supported in BMFonts.");
+				}
+
 				// Same with newImageData.
-				images[pageindex].set(imagemodule->newImageData(data.get()), Acquire::NORETAIN);
+				images[pageindex].set(imagedata, Acquire::NORETAIN);
 			}
 		}
 		else if (tag == "char")
@@ -282,20 +293,22 @@ GlyphData *BMFontRasterizer::getGlyphData(uint32 glyph) const
 
 	// Return an empty GlyphData if we don't have the glyph character.
 	if (it == characters.end())
-		return new GlyphData(glyph, GlyphMetrics(), GlyphData::FORMAT_RGBA);
+		return new GlyphData(glyph, GlyphMetrics(), PIXELFORMAT_RGBA8);
 
 	const BMFontCharacter &c = it->second;
-	GlyphData *g = new GlyphData(glyph, c.metrics, GlyphData::FORMAT_RGBA);
+	GlyphData *g = new GlyphData(glyph, c.metrics, PIXELFORMAT_RGBA8);
 
 	const auto &imagepair = images.find(c.page);
 
 	if (imagepair == images.end())
 	{
 		g->release();
-		return new GlyphData(glyph, GlyphMetrics(), GlyphData::FORMAT_RGBA);
+		return new GlyphData(glyph, GlyphMetrics(), PIXELFORMAT_RGBA8);
 	}
 
 	image::ImageData *imagedata = imagepair->second.get();
+
+	size_t pixelsize = imagedata->getPixelSize();
 	image::pixel *pixels = (image::pixel *) g->getData();
 	const image::pixel *ipixels = (const image::pixel *) imagedata->getData();
 
@@ -305,7 +318,7 @@ GlyphData *BMFontRasterizer::getGlyphData(uint32 glyph) const
 	for (int y = 0; y < c.metrics.height; y++)
 	{
 		size_t idindex = (c.y + y) * imagedata->getWidth() + c.x;
-		memcpy(&pixels[y * c.metrics.width], &ipixels[idindex], sizeof(image::pixel) * c.metrics.width);
+		memcpy(&pixels[y * c.metrics.width], &ipixels[idindex], pixelsize * c.metrics.width);
 	}
 
 	return g;
@@ -330,6 +343,11 @@ float BMFontRasterizer::getKerning(uint32 leftglyph, uint32 rightglyph) const
 		return it->second;
 
 	return 0.0f;
+}
+
+Rasterizer::DataType BMFontRasterizer::getDataType() const
+{
+	return DATA_IMAGE;
 }
 
 bool BMFontRasterizer::accepts(love::filesystem::FileData *fontdef)
